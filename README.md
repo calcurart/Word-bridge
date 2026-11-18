@@ -1,0 +1,201 @@
+# Word Bridge
+
+A daily word puzzle. Connect two words by filling in the missing words between them. Each neighboring pair must
+make a familiar compound word or phrase, read left to right.
+
+```
+SUN → [ FLOWER ] → [ POT ] → HOLE
+      sunflower   flower pot   pothole
+```
+
+React 19 + TypeScript (strict) + Vite 7. No backend, no accounts, no analytics, no external services: it builds to a
+folder of static files.
+
+## Run it
+
+Requires Node 22.18+ (for native TypeScript in tests and scripts) and pnpm.
+
+```powershell
+pnpm install
+```
+
+```powershell
+pnpm dev
+```
+
+| Command | What it does |
+|---|---|
+| `pnpm dev` | Local dev server with hot reload |
+| `pnpm test` | Unit tests (`node --test`, no extra test framework) |
+| `pnpm typecheck` | `tsc --noEmit` |
+| `pnpm validate:content` | Checks the dictionary, puzzles and schedule; exits 1 on any error |
+| `pnpm build` | Typecheck + content validation + production build into `dist/` |
+| `pnpm preview` | Serves the built `dist/` locally |
+
+If `pnpm` isn't installed, `npx --yes pnpm@11 <command>` works too.
+
+## Deploy
+
+The site is published with **GitHub Pages** by `.github/workflows/deploy.yml`. Every push to `main` runs the tests and
+the production build on GitHub, then publishes `dist/`. Nothing else is needed: there are no secrets or environment
+variables. One-time setup (already done for this repository): *Settings › Pages › Source: GitHub Actions*.
+
+To publish a change: commit it and push to `main`, then watch the **Actions** tab; the site updates a minute or two
+after the run turns green. If the tests or build fail, the old version stays online.
+
+Any other static host works as well: `pnpm build`, then upload the contents of `dist/` (Netlify, Cloudflare Pages, S3, a
+plain web server). The build uses relative asset paths (`base: './'`), so it also works from a subfolder. No server
+configuration or environment variables are needed.
+
+## How to play
+
+- Fill the gaps. Each neighboring pair makes a familiar word or phrase.
+- Standard puzzles have 3 missing words (4 links); easy puzzles have 2 (3 links).
+- Each gap holds one word. Capitals and surrounding spaces don't matter. Supported spelling variants
+  (e.g. CENTRE for CENTER) are accepted.
+- **Check Bridge** evaluates the whole bridge. You get 5 checks. Incomplete bridges, and a bridge identical to one
+  already checked (after normalising), don't use a check.
+- After a check, each **link** (not each word) is marked ✓ with the phrase it makes, or ✕ *Not in this game's
+  dictionary*. A word can be right on one side and wrong on the other, so nothing is locked. Editing a word clears
+  the feedback on its two neighboring links, because that feedback described the old word.
+- Any bridge whose links are all in the dictionary wins, not just the intended answer.
+- Up to two hints (one on easy puzzles, so a gap is always left to you). A hint reveals a word and fixes it in place;
+  it doesn't use a check but is shown in the result.
+- After five unsuccessful checks the game shows **One possible solution**, consistent with any hints you took.
+- Unrecognised links have a **Suggest** action that prepares a suggestion to copy. There is no server, so nothing is
+  sent.
+
+**Daily** is one shared puzzle per UTC date. **Practice** is unlimited, picks from the whole collection while
+avoiding recent puzzles and today's daily, and never affects daily statistics.
+
+## Code layout
+
+```
+src/data/links.ts     curated dictionary: links, link notes, spelling aliases
+src/data/puzzles.ts   puzzle collection and the tutorial example
+src/lib/graph.ts      builds the directed word graph; normalisation; link lookup
+src/lib/paths.ts      bounded path search (used by hints, reveals and the content audit)
+src/lib/game.ts       game rules: edit, check, duplicate detection, hints, reveal
+src/lib/schedule.ts   UTC day numbers and the frozen daily schedule
+src/lib/stats.ts      daily statistics and streaks, derived from saved games
+src/lib/storage.ts    versioned, validated localStorage save
+src/lib/share.ts      spoiler-free share text
+src/lib/practice.ts   practice puzzle selection
+src/lib/audit.ts      content validation (shared by tests and the script)
+src/ui/*              React components; src/styles.css for all styling
+scripts/validate-content.ts
+tests/*.test.ts
+```
+
+## The dictionary (word graph)
+
+`src/data/links.ts` lists every accepted link as a string. Each one is a **directed edge** from its first word to its
+second; words are nodes.
+
+```ts
+'sun+flower'   // closed compound: SUN → FLOWER makes "sunflower"
+'flower pot'   // open phrase:     FLOWER → POT makes "flower pot"
+'x-ray'        // hyphenated:      X → RAY makes "x-ray"
+```
+
+Direction matters: `'flower pot'` does **not** allow POT → FLOWER. Words are lowercase letters only.
+
+`LINK_NOTES` adds a short explanation to links whose meaning may not be obvious (shown in the result panel), keyed by
+the two words separated by a space: `'still life': 'a painting of objects such as fruit or flowers'`.
+
+`ALIASES` maps an accepted spelling variant to the word used in the links: `centre: 'center'`. A variant is accepted
+anywhere its target is. A variant must never itself be a word in the dictionary (the audit rejects that as ambiguous).
+
+### Adding phrases
+
+1. Add the link string to `LINKS` in the right alphabetical group.
+2. Only add combinations most everyday English speakers recognise immediately. No proper nouns, brand names,
+   offensive terms, trivia or disputed expressions. A merely grammatical pairing ("red door") is not enough.
+3. Optionally add a note to `LINK_NOTES`.
+4. Run `pnpm validate:content` and `pnpm test`.
+
+New links can create new valid answers for existing puzzles. That is intended: players are never compared against
+one answer.
+
+### Adding aliases
+
+Add `variant: 'word'` to `ALIASES`. The target must be a word in the dictionary, and the variant must not be.
+
+### Adding puzzles
+
+Add an entry to `PUZZLES` in `src/data/puzzles.ts`:
+
+```ts
+{ id: 'rain-shop', start: 'rain', end: 'shop', gaps: 3, solution: ['forest', 'fire', 'work'], difficulty: 'standard', note: 'optional editor note' }
+```
+
+- `id` is permanent. Never rename, reuse or delete an ID once it has shipped (saves and the schedule refer to it).
+- `gaps` is 3 for `standard`, 2 for `easy`.
+- `solution` is one canonical answer, used for reveals and as the tie-breaker for hints. Every link in it must exist,
+  and no word may repeat across the endpoints and solution.
+- `note` is for maintainers and never shown during play.
+
+`pnpm validate:content` then reports duplicate IDs, duplicate puzzles (same endpoints and length, or same
+solution), broken or wrong-length solutions, repeated words, ambiguous aliases, unknown words, and endpoints that
+cannot be connected at the required length. It also prints which puzzles have the fewest and most valid bridges.
+
+A new puzzle is immediately available in Practice. To put it in the Daily rotation, see below.
+
+## Preserving the daily schedule
+
+The daily puzzle for a date is decided only by `FIRST_DATE` and `DAILY_ERAS` in `src/lib/schedule.ts`, never by the
+order of `PUZZLES`. Day *n* after the era's start plays `order[n % order.length]` (the order repeats when it runs
+out).
+
+To keep past and current assignments stable:
+
+- Never change `FIRST_DATE`.
+- Never reorder, remove or replace entries in an existing era's `order` (including `ORIGINAL_ORDER`).
+- To schedule new puzzles, **append a new era** whose `start` is a future UTC day number, with its own order:
+
+```ts
+export const DAILY_ERAS = [
+  { start: FIRST_DAY, order: ORIGINAL_ORDER },
+  { start: utcDay(Date.parse('2027-03-01T00:00:00Z')), order: [...ORIGINAL_ORDER, 'new-puzzle-id', 'another-id'] },
+]
+```
+
+Dates before the new era keep the original assignment; puzzle numbers keep counting from `FIRST_DATE`. A test checks
+that adding an era leaves earlier days unchanged.
+
+## The curated dictionary's limits
+
+The game knows **651 links between 414 words** and ships **69 puzzles** (38 standard, 31 easy). It is a hand-picked
+collection of familiar compounds and phrases, not a full English dictionary, so a real expression can be missing.
+That is why the game says *"Not in this game's dictionary"* rather than "not a word", why the help says the dictionary
+is curated, and why unrecognised links offer a copyable suggestion. Validation is entirely offline and deterministic;
+no external dictionary or AI service is used during play. Plurals and other inflections are not accepted unless listed.
+
+Puzzles, links and solutions ship inside the JavaScript bundle, so anyone can read the answers with the browser's
+developer tools. This is a casual game, not a cheat-resistant competition.
+
+## Saved data, statistics and UTC rollover
+
+- Everything is stored in `localStorage` under `wordbridge.save`, as a versioned JSON object (`version: 1`). On load
+  every saved game is validated against its puzzle; anything inconsistent (wrong lengths, unknown words, attempts after
+  a win, more than five checks, hints that don't match) is dropped instead of trusted.
+- If the saved data can't be parsed, the game starts fresh, keeps a copy under `wordbridge.save.unreadable`, and says
+  so. If storage is blocked or full, the game stays playable and shows a notice that progress won't be kept.
+- Daily games are stored per UTC day. Entries, checked bridges, hints and completion survive a refresh. A finished
+  daily game is read-only and can't be replaced, so its result is recorded once.
+- Statistics are derived from those per-day records: played, wins, win %, current and best streak, and the
+  distribution of checks used for wins. A streak counts wins on consecutive daily puzzles; a loss or a missed day
+  breaks it, but an unfinished puzzle today does not end yesterday's streak. Practice never affects them.
+- The day changes at 00:00 UTC for everyone; the header shows the time left. If the date rolls over while the page is
+  open and you haven't touched the current puzzle, it switches to the new one. If you were working on (or had just
+  finished) the old puzzle, you can keep going and a banner offers today's bridge; the old puzzle's result still
+  counts for its own date. After a refresh, Daily always opens on today's puzzle.
+- **Settings › Reset all data** (with confirmation) deletes progress and statistics but keeps the theme.
+- Theme follows the device until you choose Light or Dark in Settings; the choice is remembered.
+
+## Accessibility notes
+
+Full keyboard play (Tab between gaps; Enter moves to the next empty gap, or checks when the bridge is full), labelled
+inputs and links, a live region announcing check and hint results, native `<dialog>` modals with Escape and focus
+return, feedback shown with icons and text as well as color, light and dark themes, and `prefers-reduced-motion`
+support.
