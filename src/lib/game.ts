@@ -52,6 +52,15 @@ export function hasProgress(record: GameRecord): boolean {
   return record.attempts.length > 0 || record.hints.length > 0 || record.entries.some(entry => entry.trim() !== '')
 }
 
+/**
+ * How far the progress car has driven: the number of recognized links in a row, counting from the
+ * start word. A link that is unchecked (because a word changed) or unrecognized stops the car there.
+ */
+export function carProgress(feedback: readonly LinkFeedback[]): number {
+  const stop = feedback.findIndex(state => state !== true)
+  return stop === -1 ? feedback.length : stop
+}
+
 export function fullChain(puzzle: Puzzle, words: readonly string[]): string[] {
   return [puzzle.start, ...words, puzzle.end]
 }

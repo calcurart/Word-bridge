@@ -10,6 +10,7 @@ import { findLink, normalizeEntry } from '../lib/graph.ts'
 import type { WordGraph } from '../lib/graph.ts'
 import { hintCount, shareText } from '../lib/share.ts'
 import type { ShareLabel } from '../lib/share.ts'
+import { BridgeProgress } from './BridgeProgress.tsx'
 import { shareOrCopy } from './clipboard.ts'
 import { prefersReducedMotion } from './hooks.ts'
 import { ArrowIcon, BulbIcon, CheckIcon, CrossIcon, RefreshIcon, ShareIcon } from './icons.tsx'
@@ -151,6 +152,7 @@ export function GameBoard({ puzzle, record, graph, mode, shareLabel, nextDaily, 
 
   return (
     <div className="board">
+      <BridgeProgress feedback={record.feedback} won={status === 'won'} />
       <form className="board__form" onSubmit={onSubmit} noValidate aria-label="Word bridge puzzle">
         <ol className={`bridge${status === 'won' ? ' bridge--won' : ''}`} aria-label={`Bridge from ${upper(puzzle.start)} to ${upper(puzzle.end)}`}>
           <li className="bridge__step"><EndTile word={puzzle.start} label="Start" /></li>

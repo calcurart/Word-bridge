@@ -3,7 +3,7 @@ import { test } from 'node:test'
 import { PUZZLE_BY_ID, PUZZLES } from '../src/data/puzzles.ts'
 import type { Puzzle } from '../src/data/puzzles.ts'
 import {
-  bestPath, checkBridge, checksLeft, editEntry, fullChain, gameStatus, hintsLeft, MAX_CHECKS, maxHints, newGame,
+  bestPath, carProgress, checkBridge, checksLeft, editEntry, fullChain, gameStatus, hintsLeft, MAX_CHECKS, maxHints, newGame,
   revealSolution, takeHint,
 } from '../src/lib/game.ts'
 import type { GameRecord } from '../src/lib/game.ts'
@@ -117,6 +117,21 @@ test('editing a word clears only the feedback of its two neighbouring connection
   const last = editEntry(checked, 2, 'work')
   assert.deepEqual(last.feedback, [true, true, null, null])
   assert.deepEqual(last.attempts, checked.attempts, 'history is untouched')
+})
+
+test('the progress car drives over recognized links from the start and stops at the first other one', () => {
+  assert.equal(carProgress([null, null, null, null]), 0)
+  assert.equal(carProgress([true, true, false, true]), 2, 'stops before an unknown link')
+  assert.equal(carProgress([true, null, null, true]), 1, 'an edited word sends it back')
+  assert.equal(carProgress([false, true, true, true]), 0)
+  assert.equal(carProgress([true, true, true, true]), 4, 'all the way across')
+  // Through a real game: check, then edit the middle word, then fix it.
+  const rain = puzzle('rain-shop')
+  const checked = check(rain, fill(newGame(rain), ['forest', 'fire', 'pot']))
+  assert.equal(carProgress(checked.feedback), 2)
+  assert.equal(carProgress(editEntry(checked, 0, 'coat').feedback), 0)
+  const fixed = check(rain, editEntry(checked, 2, 'work'))
+  assert.equal(carProgress(fixed.feedback), 4)
 })
 
 test('hints prefer the bridge the player is already building', () => {
