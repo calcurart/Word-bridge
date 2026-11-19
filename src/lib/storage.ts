@@ -68,7 +68,8 @@ export function validateRecord(value: unknown, puzzle: Puzzle): GameRecord | und
     if (!hint || !Number.isInteger(hint.gap) || typeof hint.word !== 'string') return
     const gap = hint.gap as number
     if (gap < 0 || gap >= puzzle.gaps || validHints.some(other => other.gap === gap)) return
-    if (!GRAPH.words.has(hint.word) || canonicalWord(GRAPH, normalizeEntry(entries[gap] as string)) !== hint.word) return
+    // Hint words may come from community phrases that load after the save is read, so only their form is checked here.
+    if (!isSingleWord(hint.word) || canonicalWord(GRAPH, normalizeEntry(entries[gap] as string)) !== hint.word) return
     validHints.push({ gap, word: hint.word })
   }
 

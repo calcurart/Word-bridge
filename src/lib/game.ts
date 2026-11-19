@@ -100,15 +100,33 @@ export function checkBridge(puzzle: Puzzle, record: GameRecord, graph: WordGraph
   const invalid = words.flatMap((word, gap) => (isSingleWord(word) ? [] : [gap]))
   if (invalid.length > 0) return { kind: 'not-one-word', gaps: invalid }
 
+  const links = evaluateChain(graph, fullChain(puzzle, words))
   const key = bridgeKey(graph, words)
-  const previous = record.attempts.findIndex(attempt => bridgeKey(graph, attempt.words) === key)
+  const sameResult = (attempt: Attempt) => attempt.links.every((ok, index) => ok === links[index])
+  // A repeat is free, unless the dictionary has gained a phrase since then and the result would differ.
+  const previous = record.attempts.findIndex(attempt => bridgeKey(graph, attempt.words) === key && sameResult(attempt))
   if (previous !== -1) {
     return { kind: 'duplicate', attempt: previous, record: { ...record, entries: words, feedback: [...record.attempts[previous].links] } }
   }
 
-  const links = evaluateChain(graph, fullChain(puzzle, words))
   const attempt: Attempt = { words, links }
   return { kind: 'checked', links, record: { ...record, entries: words, attempts: [...record.attempts, attempt], feedback: links } }
+}
+
+/**
+ * After a phrase is added to the dictionary, re-checks the player's latest submitted bridge for free
+ * if it is still on screen. Returns the same record when nothing changes. This can complete the bridge.
+ * Finished games are never changed, so a recorded win or loss stays as it was.
+ */
+export function recheckLatest(puzzle: Puzzle, record: GameRecord, graph: WordGraph = GRAPH): GameRecord {
+  const last = record.attempts.at(-1)
+  if (!last || gameStatus(record) !== 'playing') return record
+  const current = record.entries.map(normalizeEntry)
+  if (bridgeKey(graph, current) !== bridgeKey(graph, last.words)) return record
+  const links = evaluateChain(graph, fullChain(puzzle, last.words))
+  if (links.every((ok, index) => ok === last.links[index])) return record
+  const updated: Attempt = { words: last.words, links }
+  return { ...record, attempts: [...record.attempts.slice(0, -1), updated], feedback: links }
 }
 
 /** The player's entries as graph words; '' where a gap is empty or not a single word. */

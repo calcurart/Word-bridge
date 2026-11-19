@@ -586,6 +586,14 @@ button.pill--bad:hover { background: color-mix(in srgb, var(--bad-soft) 70%, var
 .suggest p { margin: 0 0 10px; }
 .suggest__actions { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 12px; }
 .suggest__status { font-size: 0.9rem; color: var(--muted); }
+.suggest__result:empty { display: none; }
+.suggest__result {
+  display: flex; align-items: flex-start; gap: 8px; margin: 12px 0;
+  padding: 10px 12px; border-radius: 12px; border: 1.5px solid; font-weight: 600; font-size: 0.95rem;
+}
+.suggest__result svg { flex: none; margin-top: 2px; }
+.suggest__result--good { background: var(--accent-wash); border-color: var(--accent); color: var(--accent-strong); }
+.suggest__result--bad { background: var(--bad-soft); border-color: var(--bad); color: var(--bad); }
 
 /* Wider screens: more breathing room around the same readable column. */
 

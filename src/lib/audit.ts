@@ -1,7 +1,8 @@
-import { ALIASES, LINK_NOTES, LINKS } from '../data/links.ts'
+import { COMMUNITY_LINKS } from '../data/community-links.ts'
+import { ALIASES, LINK_NOTES } from '../data/links.ts'
 import { PUZZLES, TUTORIAL } from '../data/puzzles.ts'
 import type { Puzzle } from '../data/puzzles.ts'
-import { buildGraph, linkKey, parseLink } from './graph.ts'
+import { buildGraph, communitySource, dictionarySources, linkKey, parseLink } from './graph.ts'
 import { findPaths } from './paths.ts'
 import { DAILY_ERAS } from './schedule.ts'
 import type { DailyEra } from './schedule.ts'
@@ -27,12 +28,18 @@ const ID = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
 export const SOLUTION_CAP = 500
 const GAPS_FOR: Record<Puzzle['difficulty'], number> = { easy: 2, standard: 3 }
 
-const DEFAULT_INPUT: ContentInput = { links: LINKS, notes: LINK_NOTES, aliases: ALIASES, puzzles: PUZZLES, eras: DAILY_ERAS }
+const DEFAULT_INPUT: ContentInput = { links: dictionarySources(), notes: LINK_NOTES, aliases: ALIASES, puzzles: PUZZLES, eras: DAILY_ERAS }
 
 /** Checks the dictionary, puzzles and schedule for problems. Used by tests and `pnpm validate:content`. */
 export function auditContent(input: ContentInput = DEFAULT_INPUT): AuditReport {
   const errors: string[] = []
   const warnings: string[] = []
+
+  if (input === DEFAULT_INPUT) {
+    for (const source of COMMUNITY_LINKS) {
+      if (!communitySource(source)) warnings.push(`Community link "${source}" is malformed or banned and is ignored.`)
+    }
+  }
 
   // Links
   const seen = new Set<string>()

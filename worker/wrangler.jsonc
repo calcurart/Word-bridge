@@ -1,0 +1,19 @@
+// Cloudflare Worker that checks phrase suggestions against Wiktionary. Deploy from this folder:
+//   npx wrangler@4 deploy
+{
+  "name": "word-bridge-phrases",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-06-01",
+  "observability": { "enabled": true },
+  "vars": {
+    // Pages allowed to send suggestions (comma-separated). Add your own domain here if you move the site.
+    "ALLOWED_ORIGINS": "https://calcurart.github.io,http://localhost:5173"
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "word-bridge",
+      "database_id": "fa2a3ada-9f67-435e-b91d-44f9bde103f8"
+    }
+  ]
+}

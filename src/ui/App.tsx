@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { PUZZLE_BY_ID, PUZZLES } from '../data/puzzles.ts'
-import { gameStatus, hasProgress, newGame } from '../lib/game.ts'
+import { fetchCommunityLinks } from '../lib/community.ts'
+import { gameStatus, hasProgress, newGame, recheckLatest } from '../lib/game.ts'
 import type { GameRecord } from '../lib/game.ts'
+import { buildGraph, dictionarySources } from '../lib/graph.ts'
 import { pickPractice, rememberPractice } from '../lib/practice.ts'
 import { dailyForDay, formatCountdown, timeUntilNextDay, utcDay } from '../lib/schedule.ts'
 import { dailyStats } from '../lib/stats.ts'
@@ -42,6 +44,17 @@ export function App() {
   const [dialog, setDialog] = useState<DialogName | null>(initial.save.tutorialSeen ? null : 'help')
   const [suggestion, setSuggestion] = useState<{ from: string; to: string } | null>(null)
   const [announcement, setAnnouncement] = useState('')
+  // Phrases added by players since this copy of the game was built, fetched from the phrase service.
+  const [extraLinks, setExtraLinks] = useState<readonly string[]>([])
+  const graph = useMemo(() => buildGraph(dictionarySources(extraLinks)), [extraLinks])
+
+  useEffect(() => {
+    let active = true
+    fetchCommunityLinks().then(links => {
+      if (active && links.length > 0) setExtraLinks(current => [...new Set([...current, ...links])])
+    })
+    return () => { active = false }
+  }, [])
 
   const announce = useCallback((text: string) => {
     // Appending an invisible character lets the same sentence be announced twice in a row.
@@ -127,6 +140,22 @@ export function App() {
   const record = showingDaily ? dailyRecord : practiceRecord
   const olderDaily = showingDaily && assignment.day !== dailyForDay(today).day
 
+  /** A suggestion was accepted: use the phrase now, and re-check the latest bridge for free if it's still on screen. */
+  function addPhrase(source: string): string {
+    const links = [...new Set([...extraLinks, source])]
+    setExtraLinks(links)
+    if (!puzzle || !record) return ''
+    const updated = recheckLatest(puzzle, record, buildGraph(dictionarySources(links)))
+    if (updated === record) return ''
+    if (showingDaily) updateDaily(updated)
+    else updatePractice(updated)
+    const note = gameStatus(updated) === 'won'
+      ? 'Your bridge was re-checked without using a check, and it’s complete!'
+      : 'Your latest bridge was re-checked without using a check.'
+    announce(note)
+    return note
+  }
+
   return (
     <div className="app">
       <a className="skip-link" href="#puzzle">Skip to puzzle</a>
@@ -179,6 +208,7 @@ export function App() {
               key={`${mode}-${showingDaily ? assignment.day : record.puzzleId}`}
               puzzle={puzzle}
               record={record}
+              graph={graph}
               mode={mode}
               shareLabel={showingDaily ? { mode: 'daily', number: assignment.number } : { mode: 'practice' }}
               nextDaily={showingDaily && !olderDaily ? countdown : null}
@@ -221,7 +251,7 @@ export function App() {
         />
       </Dialog>
       <Dialog open={suggestion !== null} title="Suggest a phrase" onClose={() => setSuggestion(null)}>
-        {suggestion && <SuggestPanel from={suggestion.from} to={suggestion.to} />}
+        {suggestion && <SuggestPanel from={suggestion.from} to={suggestion.to} onAdded={addPhrase} />}
       </Dialog>
     </div>
   )

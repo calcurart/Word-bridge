@@ -37,8 +37,8 @@ If `pnpm` isn't installed, `npx --yes pnpm@11 <command>` works too.
 ## Deploy
 
 The site is published with **GitHub Pages** by `.github/workflows/deploy.yml`. Every push to `main` runs the tests and
-the production build on GitHub, then publishes `dist/`. Nothing else is needed: there are no secrets or environment
-variables. One-time setup (already done for this repository): *Settings › Pages › Source: GitHub Actions*.
+the production build on GitHub, then publishes `dist/`. There are no secrets; the only setting is the public address
+of the phrase service in `.env.production`. One-time setup (already done for this repository): *Settings › Pages › Source: GitHub Actions*.
 
 To publish a change: commit it and push to `main`, then watch the **Actions** tab; the site updates a minute or two
 after the run turns green. If the tests or build fail, the old version stays online.
@@ -62,8 +62,9 @@ configuration or environment variables are needed.
 - Up to two hints (one on easy puzzles, so a gap is always left to you). A hint reveals a word and fixes it in place;
   it doesn't use a check but is shown in the result.
 - After five unsuccessful checks the game shows **One possible solution**, consistent with any hints you took.
-- Unrecognised links have a **Suggest** action that prepares a suggestion to copy. There is no server, so nothing is
-  sent.
+- Unrecognised links have a **Suggest** action. The phrase is looked up in Wiktionary and, if it's a real English
+  word or phrase, added to the game for everyone at once (see *Player suggestions* below). If the player's latest
+  bridge is still on screen it is re-checked for free, which can complete it.
 
 **Daily** is one shared puzzle per UTC date. **Practice** is unlimited, picks from the whole collection while
 avoiding recent puzzles and today's daily, and never affects daily statistics.
@@ -71,8 +72,11 @@ avoiding recent puzzles and today's daily, and never affects daily statistics.
 ## Code layout
 
 ```
-src/data/links.ts     curated dictionary: links, link notes, spelling aliases
+src/data/links.ts     curated dictionary: links, link notes, spelling aliases, NEVER_LINKS
+src/data/community-links.ts  phrases added from verified player suggestions (generated nightly)
 src/data/puzzles.ts   puzzle collection and the tutorial example
+src/lib/community.ts  client for the phrase service (load added phrases, send suggestions)
+worker/               phrase service: Cloudflare Worker + D1 schema; worker/src/verify.ts judges Wiktionary entries
 src/lib/graph.ts      builds the directed word graph; normalisation; link lookup
 src/lib/paths.ts      bounded path search (used by hints, reveals and the content audit)
 src/lib/game.ts       game rules: edit, check, duplicate detection, hints, reveal
@@ -83,7 +87,7 @@ src/lib/share.ts      spoiler-free share text
 src/lib/practice.ts   practice puzzle selection
 src/lib/audit.ts      content validation (shared by tests and the script)
 src/ui/*              React components; src/styles.css for all styling
-scripts/validate-content.ts
+scripts/validate-content.ts, scripts/sync-community.ts
 tests/*.test.ts
 ```
 
@@ -163,13 +167,55 @@ export const DAILY_ERAS = [
 Dates before the new era keep the original assignment; puzzle numbers keep counting from `FIRST_DATE`. A test checks
 that adding an era leaves earlier days unchanged.
 
+## Player suggestions
+
+When a link is marked ✕, the player can suggest it. The phrase service in `worker/` (a Cloudflare Worker with a D1
+database, free tier) then:
+
+1. looks up the closed, open and hyphenated forms (`sunhat`, `sun hat`, `sun-hat`) in Wiktionary with one request;
+2. accepts the pair if an **English** entry exists as a noun, verb, adjective, adverb, phrase or idiom (not a proper
+   noun), unless any form is labelled vulgar, offensive, derogatory or a slur, or uses a blocked word, and unless every
+   sense is archaic, obsolete, rare or a misspelling (`worker/src/verify.ts`);
+3. stores accepted phrases and serves them at `GET /links`. Every player's game loads that list on start, so a phrase
+   added by one player works for everyone right away.
+
+Every night (00:20 UTC) the deploy workflow runs `pnpm sync:community`, which copies accepted phrases into
+`src/data/community-links.ts`, runs the tests and content validation, commits the file and republishes. Synced phrases
+then also work offline.
+
+Limits and safeguards: Wiktionary lists established compounds, not every everyday pairing (PARK BENCH has no entry, so
+it can't be added this way; add such phrases to `links.ts` by hand). Each address may suggest 20 phrases an hour and
+at most 300 phrases are added per day. Dictionary verdicts are cached for a week. IP addresses are only stored as
+salted hashes and suggestion records are deleted after 30 days. Finished games are never re-scored by later additions.
+
+**Removing an unwanted community phrase:** add it to `NEVER_LINKS` in `src/data/links.ts` (the game ignores it at once
+after the next deploy), delete its line from `community-links.ts`, and optionally delete it from the database:
+
+```powershell
+npx wrangler@4 d1 execute word-bridge --remote --command "DELETE FROM links WHERE from_word='jelly' AND to_word='roll'"
+```
+
+### Setting up the phrase service
+
+From the `worker/` folder, signed in with `npx wrangler@4 login`:
+
+1. `npx wrangler@4 d1 create word-bridge`, then put the printed `database_id` in `wrangler.jsonc`.
+2. `npx wrangler@4 d1 execute word-bridge --remote --file=schema.sql`
+3. `npx wrangler@4 deploy` and note the `https://word-bridge-phrases.<subdomain>.workers.dev` address.
+4. Put that address in `.env.production` as `VITE_COMMUNITY_API` (see `.env.example`), commit and push.
+
+If `ALLOWED_ORIGINS` in `wrangler.jsonc` doesn't include the site's address, suggestions are refused. Without
+`VITE_COMMUNITY_API` the game works as before and the Suggest dialog only offers a copyable suggestion. No secrets are
+involved: the Worker address is public.
+
 ## The curated dictionary's limits
 
-The game knows **651 links between 414 words** and ships **69 puzzles** (38 standard, 31 easy). It is a hand-picked
-collection of familiar compounds and phrases, not a full English dictionary, so a real expression can be missing.
-That is why the game says *"Not in this game's dictionary"* rather than "not a word", why the help says the dictionary
-is curated, and why unrecognised links offer a copyable suggestion. Validation is entirely offline and deterministic;
-no external dictionary or AI service is used during play. Plurals and other inflections are not accepted unless listed.
+The game knows **651 built-in links between 414 words**, plus any community phrases, and ships **69 puzzles**
+(38 standard, 31 easy). It is a hand-picked collection of familiar compounds and phrases, not a full English
+dictionary, so a real expression can be missing. That is why the game says *"Not in this game's dictionary"* rather
+than "not a word", and why unrecognised links can be suggested. Checking a bridge is always done in the browser
+against the loaded dictionary; only suggestions contact the phrase service (and through it, Wiktionary). Plurals and
+other inflections are not accepted unless listed.
 
 Puzzles, links and solutions ship inside the JavaScript bundle, so anyone can read the answers with the browser's
 developer tools. This is a casual game, not a cheat-resistant competition.

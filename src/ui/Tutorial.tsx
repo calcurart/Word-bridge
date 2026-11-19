@@ -77,7 +77,7 @@ export function Tutorial({ onDone }: { onDone: () => void }) {
           <li><strong>One word per gap.</strong> Capitals and extra spaces don’t matter.</li>
           <li><strong>More than one bridge may work.</strong> Any bridge whose links are all recognized wins.</li>
           <li><strong>Feedback is about links, not words.</strong> After a check each link shows <span className="inline-good"><CheckIcon width="13" height="13" /> recognized</span> or <span className="inline-bad"><CrossIcon width="13" height="13" /> not in this game’s dictionary</span>. A word can fit on one side and not the other.</li>
-          <li><strong>The dictionary is curated.</strong> It holds familiar compounds and phrases, so a real expression may still be missing. You can suggest it.</li>
+          <li><strong>The dictionary is curated.</strong> It holds familiar compounds and phrases, so a real expression may still be missing. Tap a ✕ link to suggest it: if Wiktionary lists it, it’s added for everyone.</li>
           <li><strong>{MAX_CHECKS} checks per puzzle.</strong> Incomplete or repeated bridges don’t use one. Up to two hints can each reveal a word.</li>
         </ul>
       ) : (

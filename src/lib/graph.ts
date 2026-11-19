@@ -1,4 +1,5 @@
-import { ALIASES, LINK_NOTES, LINKS } from '../data/links.ts'
+import { COMMUNITY_LINKS } from '../data/community-links.ts'
+import { ALIASES, LINK_NOTES, LINKS, NEVER_LINKS } from '../data/links.ts'
 
 /** One accepted connection: `from` followed by `to` makes `phrase`. */
 export type Link = {
@@ -33,8 +34,43 @@ export function parseLink(source: string): Link | null {
   return { from, to, phrase: joiner === '+' ? from + to : `${from}${joiner}${to}` }
 }
 
+/**
+ * Cleans a phrase that came from player suggestions: spelling variants are mapped to the dictionary's
+ * spelling (so "colour wheel" becomes "color wheel"), and malformed or banned links are dropped.
+ */
+export function communitySource(
+  source: string,
+  aliases: Readonly<Record<string, string>> = ALIASES,
+  never: ReadonlySet<string> = NEVER_LINKS,
+): string | null {
+  const match = SOURCE.exec(source)
+  if (!match) return null
+  const [, rawFrom, joiner, rawTo] = match
+  const from = Object.hasOwn(aliases, rawFrom) ? aliases[rawFrom] : rawFrom
+  const to = Object.hasOwn(aliases, rawTo) ? aliases[rawTo] : rawTo
+  if (from === to || never.has(linkKey(from, to))) return null
+  return `${from}${joiner}${to}`
+}
+
+/** The built-in dictionary plus community phrases (bundled ones and any fetched while playing). */
+export function dictionarySources(extra: readonly string[] = []): string[] {
+  const seen = new Set(LINKS.flatMap(source => {
+    const link = parseLink(source)
+    return link ? [linkKey(link.from, link.to)] : []
+  }))
+  const community: string[] = []
+  for (const raw of [...COMMUNITY_LINKS, ...extra]) {
+    const source = communitySource(raw)
+    const link = source ? parseLink(source) : null
+    if (!source || !link || seen.has(linkKey(link.from, link.to))) continue
+    seen.add(linkKey(link.from, link.to))
+    community.push(source)
+  }
+  return [...LINKS, ...community]
+}
+
 export function buildGraph(
-  sources: readonly string[] = LINKS,
+  sources: readonly string[] = dictionarySources(),
   notes: Readonly<Record<string, string>> = LINK_NOTES,
   aliases: Readonly<Record<string, string>> = ALIASES,
 ): WordGraph {

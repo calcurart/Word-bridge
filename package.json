@@ -9,8 +9,9 @@
     "dev": "vite",
     "test": "node --test tests/*.test.ts",
     "validate:content": "node scripts/validate-content.ts",
-    "typecheck": "tsc --noEmit",
-    "build": "tsc --noEmit && node scripts/validate-content.ts && vite build",
+    "sync:community": "node scripts/sync-community.ts",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p worker",
+    "build": "tsc --noEmit && tsc --noEmit -p worker && node scripts/validate-content.ts && vite build",
     "preview": "vite preview"
   },
   "dependencies": {

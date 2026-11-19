@@ -330,3 +330,10 @@ export const ALIASES: Readonly<Record<string, string>> = {
   colour: 'color',
   plough: 'plow',
 }
+
+// Links that must never be accepted, even if a player suggestion added them (see community-links.ts).
+// Use this to remove an unwanted community phrase: it is then ignored by the game and never re-synced.
+// Keyed like LINK_NOTES: "first second".
+export const NEVER_LINKS: ReadonlySet<string> = new Set([
+  'pot flower', // the tutorial uses POT → FLOWER as its example of a link that doesn't count
+])

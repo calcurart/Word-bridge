@@ -6,7 +6,8 @@ import {
   revealSolution, takeHint,
 } from '../lib/game.ts'
 import type { GameRecord, LinkFeedback } from '../lib/game.ts'
-import { findLink, GRAPH, normalizeEntry } from '../lib/graph.ts'
+import { findLink, normalizeEntry } from '../lib/graph.ts'
+import type { WordGraph } from '../lib/graph.ts'
 import { hintCount, shareText } from '../lib/share.ts'
 import type { ShareLabel } from '../lib/share.ts'
 import { shareOrCopy } from './clipboard.ts'
@@ -16,6 +17,8 @@ import { ArrowIcon, BulbIcon, CheckIcon, CrossIcon, RefreshIcon, ShareIcon } fro
 type Props = {
   puzzle: Puzzle
   record: GameRecord
+  /** The dictionary, including community phrases loaded while playing. */
+  graph: WordGraph
   mode: 'daily' | 'practice'
   shareLabel: ShareLabel
   /** "Next Daily Bridge in …" text, daily only. */
@@ -31,7 +34,7 @@ type Message = { text: string; tone: 'info' | 'warn' | 'good' }
 const upper = (word: string) => word.toUpperCase()
 const isCoarsePointer = () => typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches
 
-export function GameBoard({ puzzle, record, mode, shareLabel, nextDaily, onRecord, onAnnounce, onPlayMore, onSuggest }: Props) {
+export function GameBoard({ puzzle, record, graph, mode, shareLabel, nextDaily, onRecord, onAnnounce, onPlayMore, onSuggest }: Props) {
   const status = gameStatus(record)
   const finished = status !== 'playing'
   const inputs = useRef<(HTMLInputElement | null)[]>([])
@@ -62,7 +65,7 @@ export function GameBoard({ puzzle, record, mode, shareLabel, nextDaily, onRecor
   }
 
   function check() {
-    const result = checkBridge(puzzle, record)
+    const result = checkBridge(puzzle, record, graph)
     switch (result.kind) {
       case 'finished':
         return
@@ -99,7 +102,7 @@ export function GameBoard({ puzzle, record, mode, shareLabel, nextDaily, onRecor
         }
         const unknown = result.links.flatMap((ok, link) => (ok ? [] : [`${upper(chain[link])} to ${upper(chain[link + 1])}`]))
         if (after === 'lost') {
-          const solution = fullChain(puzzle, revealSolution(puzzle, result.record)).map(upper).join(', ')
+          const solution = fullChain(puzzle, revealSolution(puzzle, result.record, graph)).map(upper).join(', ')
           setMessage(null)
           onAnnounce(`Out of checks. One possible solution: ${solution}.`)
           return
@@ -113,7 +116,7 @@ export function GameBoard({ puzzle, record, mode, shareLabel, nextDaily, onRecor
   }
 
   function hint() {
-    const result = takeHint(puzzle, record)
+    const result = takeHint(puzzle, record, graph)
     if (result.kind !== 'hint') return
     onRecord(result.record)
     let text = `Hint: word ${result.gap + 1} is ${upper(result.word)}.`
@@ -159,7 +162,7 @@ export function GameBoard({ puzzle, record, mode, shareLabel, nextDaily, onRecor
                 <li className="bridge__step">
                   <Connector
                     index={gap} from={chainForLabels[gap]} to={chainForLabels[gap + 1]}
-                    state={record.feedback[gap]} onSuggest={onSuggest}
+                    state={record.feedback[gap]} graph={graph} onSuggest={onSuggest}
                   />
                 </li>
                 <li className="bridge__step">
@@ -203,7 +206,7 @@ export function GameBoard({ puzzle, record, mode, shareLabel, nextDaily, onRecor
           <li className="bridge__step">
             <Connector
               index={puzzle.gaps} from={chainForLabels[puzzle.gaps]} to={chainForLabels[puzzle.gaps + 1]}
-              state={record.feedback[puzzle.gaps]} onSuggest={onSuggest}
+              state={record.feedback[puzzle.gaps]} graph={graph} onSuggest={onSuggest}
             />
           </li>
           <li className="bridge__step"><EndTile word={puzzle.end} label="End" /></li>
@@ -234,7 +237,7 @@ export function GameBoard({ puzzle, record, mode, shareLabel, nextDaily, onRecor
 
       {finished && (
         <Result
-          puzzle={puzzle} record={record} mode={mode} shareLabel={shareLabel} nextDaily={nextDaily}
+          puzzle={puzzle} record={record} graph={graph} mode={mode} shareLabel={shareLabel} nextDaily={nextDaily}
           headingRef={resultHeading} onPlayMore={onPlayMore} onAnnounce={onAnnounce}
         />
       )}
@@ -253,14 +256,15 @@ function EndTile({ word, label }: { word: string; label: string }) {
   )
 }
 
-function Connector({ index, from, to, state, onSuggest }: {
+function Connector({ index, from, to, state, graph, onSuggest }: {
   index: number
   from: string
   to: string
   state: LinkFeedback
+  graph: WordGraph
   onSuggest: (from: string, to: string) => void
 }) {
-  const link = state === true ? findLink(GRAPH, from, to) : undefined
+  const link = state === true ? findLink(graph, from, to) : undefined
   const label = `Link ${index + 1}, ${upper(from)} to ${upper(to)}`
   const style = { '--i': index } as CSSProperties
   if (state === true) {
@@ -345,9 +349,10 @@ function History({ puzzle, record }: { puzzle: Puzzle; record: GameRecord }) {
   )
 }
 
-function Result({ puzzle, record, mode, shareLabel, nextDaily, headingRef, onPlayMore, onAnnounce }: {
+function Result({ puzzle, record, graph, mode, shareLabel, nextDaily, headingRef, onPlayMore, onAnnounce }: {
   puzzle: Puzzle
   record: GameRecord
+  graph: WordGraph
   mode: 'daily' | 'practice'
   shareLabel: ShareLabel
   nextDaily: string | null
@@ -356,9 +361,9 @@ function Result({ puzzle, record, mode, shareLabel, nextDaily, headingRef, onPla
   onAnnounce: (text: string) => void
 }) {
   const won = gameStatus(record) === 'won'
-  const words = won ? record.attempts[record.attempts.length - 1].words : revealSolution(puzzle, record)
+  const words = won ? record.attempts[record.attempts.length - 1].words : revealSolution(puzzle, record, graph)
   const chain = fullChain(puzzle, words)
-  const links = chainLinks(chain)
+  const links = chainLinks(chain, graph)
   const [shareState, setShareState] = useState<{ text: string; manual: string | null } | null>(null)
   const manualRef = useRef<HTMLTextAreaElement>(null)
   const ids = useId()

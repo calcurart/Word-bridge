@@ -1,14 +1,18 @@
 # Builds the site and publishes it to GitHub Pages on every push to main.
+# Every night it also copies phrases accepted from player suggestions into src/data/community-links.ts,
+# commits them if the tests and build pass, and republishes.
 # One-time setup: repository Settings › Pages › Source: "GitHub Actions".
 name: Deploy to GitHub Pages
 
 on:
   push:
     branches: [main]
+  schedule:
+    - cron: '20 0 * * *' # 00:20 UTC, just after the daily puzzle changes
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write # only used to commit synced community phrases
   pages: write
   id-token: write
 
@@ -27,8 +31,20 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - name: Sync community phrases
+        if: github.event_name != 'push'
+        run: pnpm sync:community
       - run: pnpm test
       - run: pnpm build # typecheck + content validation + vite build
+      - name: Commit synced phrases
+        if: github.event_name != 'push'
+        run: |
+          git add src/data/community-links.ts
+          if git diff --cached --quiet; then echo "No new community phrases."; exit 0; fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "Add community phrases from verified suggestions"
+          git push
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:

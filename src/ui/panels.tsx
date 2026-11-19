@@ -1,8 +1,10 @@
 import { useState } from 'react'
+import { COMMUNITY_API, suggestLink } from '../lib/community.ts'
+import type { SuggestResult, SuggestStatus } from '../lib/community.ts'
 import type { DailyStats } from '../lib/stats.ts'
 import type { Theme } from '../lib/storage.ts'
 import { copyText } from './clipboard.ts'
-import { CopyIcon } from './icons.tsx'
+import { CheckIcon, CopyIcon, CrossIcon } from './icons.tsx'
 
 export function StatsPanel({ stats, nextDaily, highlight }: { stats: DailyStats; nextDaily: string; highlight: number | null }) {
   const most = Math.max(1, ...stats.distribution)
@@ -72,7 +74,10 @@ export function SettingsPanel({ theme, onTheme, onTutorial, onReset }: {
 
       <section className="settings__group">
         <h3 className="dialog__subtitle">Your data</h3>
-        <p className="dialog__fine">Progress and statistics are stored only in this browser. Nothing is sent anywhere.</p>
+        <p className="dialog__fine">
+          Progress and statistics are stored only in this browser. The only thing ever sent is a phrase you choose to
+          suggest.
+        </p>
         {confirming ? (
           <div className="confirm" role="alertdialog" aria-labelledby="confirm-text">
             <p id="confirm-text"><strong>Delete all daily results, streaks and practice progress?</strong> This can’t be undone.</p>
@@ -90,15 +95,78 @@ export function SettingsPanel({ theme, onTheme, onTutorial, onReset }: {
         <h3 className="dialog__subtitle">About</h3>
         <p className="dialog__fine">
           Word Bridge checks each link against a curated dictionary of familiar compounds and phrases built into the
-          game. It works offline, with no accounts or tracking. Because the puzzles and answers ship with the page,
-          anyone can inspect them: this is a casual game, not a cheat-proof competition.
+          game, plus phrases players have suggested that were confirmed in Wiktionary. Checking works offline, with no
+          accounts or tracking. Because the puzzles and answers ship with the page, anyone can inspect them: this is a
+          casual game, not a cheat-proof competition.
         </p>
       </section>
     </div>
   )
 }
 
-export function SuggestPanel({ from, to }: { from: string; to: string }) {
+const SUGGEST_MESSAGES: Record<Exclude<SuggestStatus, 'added' | 'exists'>, string> = {
+  'not-found': 'Wiktionary doesn’t list this as a word or phrase, so it wasn’t added.',
+  unfamiliar: 'Wiktionary only lists this as a rare, old-fashioned or misspelled form, so it wasn’t added.',
+  offensive: 'This one isn’t suitable for the game, so it wasn’t added.',
+  invalid: 'Only pairs of single words made of letters can be suggested.',
+  'rate-limited': 'Lots of suggestions are arriving right now. Please try again a little later.',
+  error: 'The dictionary couldn’t be checked right now. Please try again later.',
+  offline: 'The suggestion service couldn’t be reached. Check your connection and try again.',
+}
+
+export function SuggestPanel({ from, to, onAdded }: { from: string; to: string; onAdded: (source: string) => string }) {
+  const [state, setState] = useState<{ phase: 'idle' | 'checking' } | { phase: 'done'; result: SuggestResult; note: string }>({ phase: 'idle' })
+  const pair = `${from.toUpperCase()} ${to.toUpperCase()}`
+
+  async function check() {
+    setState({ phase: 'checking' })
+    const result = await suggestLink(from, to)
+    const note = (result.status === 'added' || result.status === 'exists') && result.source ? onAdded(result.source) : ''
+    setState({ phase: 'done', result, note })
+  }
+
+  if (!COMMUNITY_API) return <CopySuggestion from={from} to={to} />
+
+  const result = state.phase === 'done' ? state.result : null
+  const accepted = result && (result.status === 'added' || result.status === 'exists')
+  return (
+    <div className="suggest">
+      <p>
+        <strong>{pair}</strong> isn’t in this game’s dictionary yet. Is it a real word or phrase, read left to right?
+      </p>
+      <p className="dialog__fine">
+        Suggest it and the game looks it up in Wiktionary, a free online dictionary. If it’s listed as an English word
+        or phrase (and isn’t offensive), it’s added to Word Bridge for every player straight away.
+      </p>
+      {!accepted && (
+        <div className="suggest__actions">
+          <button type="button" className="btn btn--primary btn--small" onClick={check} disabled={state.phase === 'checking'}>
+            {state.phase === 'checking' ? 'Looking it up…' : `Suggest ${pair}`}
+          </button>
+        </div>
+      )}
+      <div role="status" className={`suggest__result${accepted ? ' suggest__result--good' : result ? ' suggest__result--bad' : ''}`}>
+        {result && (accepted
+          ? <><CheckIcon width="18" height="18" /><span>
+              {result.status === 'added' ? 'Found it! ' : 'Already added by another player. '}
+              “{result.source ? parseLinkPhrase(result.source) : `${from} ${to}`}” is now part of Word Bridge for everyone.{state.phase === 'done' && state.note ? ` ${state.note}` : ''}
+            </span></>
+          : <><CrossIcon width="18" height="18" /><span>{SUGGEST_MESSAGES[result.status as keyof typeof SUGGEST_MESSAGES]}</span></>)}
+      </div>
+      <p className="dialog__fine">
+        Only the two words are sent, to Word Bridge’s phrase service and from there to Wiktionary.
+      </p>
+    </div>
+  )
+}
+
+/** "sun+hat" -> "sunhat", "fire alarm" -> "fire alarm". */
+function parseLinkPhrase(source: string): string {
+  return source.replace('+', '')
+}
+
+/** Fallback when no phrase service is configured: a suggestion the player can copy and pass on. */
+function CopySuggestion({ from, to }: { from: string; to: string }) {
   const [copied, setCopied] = useState<'idle' | 'copied' | 'failed'>('idle')
   const pair = `${from.toUpperCase()} ${to.toUpperCase()}`
   const text = `Word Bridge phrase suggestion: please consider adding “${from} ${to}” (${from.toUpperCase()} → ${to.toUpperCase()}) as a familiar compound or phrase.`
@@ -109,8 +177,8 @@ export function SuggestPanel({ from, to }: { from: string; to: string }) {
         knows a curated collection of familiar compounds and phrases, read left to right.
       </p>
       <p className="dialog__fine">
-        This game has no server, so nothing is sent from here. If you think it belongs, copy the suggestion and pass it
-        on to whoever runs the game.
+        This copy of the game isn’t connected to a phrase service, so nothing is sent from here. If you think it
+        belongs, copy the suggestion and pass it on to whoever runs the game.
       </p>
       <label className="sr-only" htmlFor="suggestion-text">Suggestion text</label>
       <textarea id="suggestion-text" className="manual-copy" readOnly value={text} rows={3} onFocus={event => event.currentTarget.select()} />
