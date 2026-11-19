@@ -152,8 +152,9 @@ export function GameBoard({ puzzle, record, graph, mode, shareLabel, nextDaily, 
 
   return (
     <div className="board">
-      <BridgeProgress feedback={record.feedback} won={status === 'won'} />
       <form className="board__form" onSubmit={onSubmit} noValidate aria-label="Word bridge puzzle">
+        <div className="bridge-wrap">
+        <BridgeProgress feedback={record.feedback} won={status === 'won'} />
         <ol className={`bridge${status === 'won' ? ' bridge--won' : ''}`} aria-label={`Bridge from ${upper(puzzle.start)} to ${upper(puzzle.end)}`}>
           <li className="bridge__step"><EndTile word={puzzle.start} label="Start" /></li>
           {record.entries.map((entry, gap) => {
@@ -213,6 +214,7 @@ export function GameBoard({ puzzle, record, graph, mode, shareLabel, nextDaily, 
           </li>
           <li className="bridge__step"><EndTile word={puzzle.end} label="End" /></li>
         </ol>
+        </div>
 
         {!finished && (
           <div className="controls">
