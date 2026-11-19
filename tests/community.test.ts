@@ -57,34 +57,37 @@ test('the dictionary request and response are handled in one call', () => {
   assert.equal(parsePages({}).size, 0)
 })
 
+// These tests use made-up words (ZORK, BLAT) so phrases synced from real suggestions can never affect them.
 test('community phrases are cleaned: spellings unified, banned and malformed links dropped', () => {
-  assert.equal(communitySource('sun+hat'), 'sun+hat')
-  assert.equal(communitySource('colour blind'), 'color blind')
+  assert.equal(communitySource('zork+blat'), 'zork+blat')
+  assert.equal(communitySource('colour zork'), 'color zork')
   assert.equal(communitySource('pot+flower'), null, 'NEVER_LINKS wins over suggestions')
-  assert.equal(communitySource('Sun hat'), null)
-  assert.equal(communitySource('sun+sun'), null)
-  const sources = dictionarySources(['sun+hat', 'sun hat', 'sun+flower', 'colour+blind'])
-  assert.equal(sources.filter(source => source.startsWith('sun') && source.endsWith('hat')).length, 1, 'no duplicate links')
+  assert.equal(communitySource('Zork blat'), null)
+  assert.equal(communitySource('zork+zork'), null)
+  const sources = dictionarySources(['zork+blat', 'zork blat', 'sun+flower', 'colour+zork'])
+  assert.equal(sources.filter(source => source.startsWith('zork') && source.endsWith('blat')).length, 1, 'no duplicate links')
   assert.equal(sources.filter(source => source === 'sun+flower').length, 1, 'built-in links are not repeated')
   const graph = buildGraph(sources)
-  assert.equal(findLink(graph, 'sun', 'hat')?.phrase, 'sunhat')
-  assert.equal(findLink(graph, 'colour', 'blind')?.phrase, 'colorblind', 'aliases still work for new words')
-  assert.equal(findLink(GRAPH, 'sun', 'hat'), undefined, 'the built-in graph is unchanged')
+  assert.equal(findLink(graph, 'zork', 'blat')?.phrase, 'zorkblat')
+  assert.equal(findLink(graph, 'colour', 'zork')?.phrase, 'colorzork', 'aliases still work for new words')
+  assert.equal(findLink(GRAPH, 'zork', 'blat'), undefined, 'the built-in graph is unchanged')
 })
 
+const honey = () => PUZZLE_BY_ID.get('honey-house')! // HONEY → MOON → LIGHT → HOUSE
+const zorkLinks = ['moon+zork', 'zork+house']
+
 test('an accepted suggestion re-checks the latest bridge for free and can complete it', () => {
-  const puzzle = PUZZLE_BY_ID.get('honey-house')! // HONEY → MOON → LIGHT → HOUSE
-  let record: GameRecord = editEntry(editEntry(newGame(puzzle), 0, 'moon'), 1, 'beam')
+  const puzzle = honey()
+  let record: GameRecord = editEntry(editEntry(newGame(puzzle), 0, 'moon'), 1, 'zork')
   const checked = checkBridge(puzzle, record)
   assert.equal(checked.kind, 'checked')
   if (checked.kind !== 'checked') return
   record = checked.record
-  assert.deepEqual(record.feedback, [true, true, false]) // BEAM → HOUSE is unknown
+  assert.deepEqual(record.feedback, [true, false, false])
 
-  const before = buildGraph()
-  assert.equal(recheckLatest(puzzle, record, before), record, 'nothing changes without a new phrase')
+  assert.equal(recheckLatest(puzzle, record, buildGraph()), record, 'nothing changes without a new phrase')
 
-  const after = buildGraph(dictionarySources(['beam+house']))
+  const after = buildGraph(dictionarySources(zorkLinks))
   const rechecked = recheckLatest(puzzle, record, after)
   assert.equal(rechecked.attempts.length, 1, 'no check is used')
   assert.deepEqual(rechecked.feedback, [true, true, true])
@@ -96,25 +99,24 @@ test('an accepted suggestion re-checks the latest bridge for free and can comple
 })
 
 test('a repeated bridge is free unless the dictionary has changed its result', () => {
-  const puzzle = PUZZLE_BY_ID.get('honey-house')!
-  const first = checkBridge(puzzle, editEntry(editEntry(newGame(puzzle), 0, 'moon'), 1, 'beam'))
+  const puzzle = honey()
+  const first = checkBridge(puzzle, editEntry(editEntry(newGame(puzzle), 0, 'moon'), 1, 'zork'))
   assert.equal(first.kind, 'checked')
   if (first.kind !== 'checked') return
   assert.equal(checkBridge(puzzle, first.record).kind, 'duplicate')
-  const after = buildGraph(dictionarySources(['beam+house']))
-  const again = checkBridge(puzzle, first.record, after)
+  const again = checkBridge(puzzle, first.record, buildGraph(dictionarySources(zorkLinks)))
   assert.equal(again.kind, 'checked')
   if (again.kind === 'checked') assert.equal(gameStatus(again.record), 'won')
 })
 
 test('finished games are never changed by a later phrase', () => {
-  const puzzle = PUZZLE_BY_ID.get('honey-house')!
+  const puzzle = honey()
   let record = newGame(puzzle)
-  for (const word of ['qa', 'qb', 'qc', 'qd', 'beam']) {
+  for (const word of ['qa', 'qb', 'qc', 'qd', 'zork']) {
     record = editEntry(editEntry(record, 0, 'moon'), 1, word)
     const result = checkBridge(puzzle, record)
     if (result.kind === 'checked') record = result.record
   }
   assert.equal(gameStatus(record), 'lost')
-  assert.equal(recheckLatest(puzzle, record, buildGraph(dictionarySources(['beam+house']))), record)
+  assert.equal(recheckLatest(puzzle, record, buildGraph(dictionarySources(zorkLinks))), record)
 })
