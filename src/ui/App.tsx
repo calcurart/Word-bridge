@@ -236,11 +236,12 @@ export function App() {
       <main id="puzzle" className="main" tabIndex={-1}>
         {showingChallenge ? (
           <ChallengeBoard
-            graph={graph}
             playerId={save.playerId}
             playerName={save.playerName}
-            best={save.challengeBest}
-            onBest={score => setSave(current => ({ ...current, challengeBest: Math.max(current.challengeBest, score) }))}
+            bests={{ single: save.bestSingle, double: save.bestDouble }}
+            onBest={(mode, score) => setSave(current => (mode === 'single'
+              ? { ...current, bestSingle: Math.max(current.bestSingle, score) }
+              : { ...current, bestDouble: Math.max(current.bestDouble, score) }))}
             onAnnounce={announce}
             onLeaderboard={() => setDialog('leaderboard')}
           />

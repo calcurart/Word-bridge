@@ -33,7 +33,9 @@ export type Save = {
   readonly showOnLeaderboard: boolean
   /** IDs of finished games already counted on the server, newest last. */
   readonly reported: readonly string[]
-  readonly challengeBest: number
+  /** Personal best challenge scores (points). */
+  readonly bestSingle: number
+  readonly bestDouble: number
 }
 
 export type StorageAccess = Pick<Storage, 'getItem' | 'setItem'>
@@ -42,7 +44,7 @@ export type LoadStatus = 'ok' | 'recovered' | 'unavailable'
 export function freshSave(): Save {
   return {
     version: VERSION, theme: 'system', tutorialSeen: false, daily: {}, practice: null, recentPractice: [],
-    playerId: '', playerName: null, showOnLeaderboard: true, reported: [], challengeBest: 0,
+    playerId: '', playerName: null, showOnLeaderboard: true, reported: [], bestSingle: 0, bestDouble: 0,
   }
 }
 
@@ -134,7 +136,8 @@ export function decodeSave(raw: string | null): { save: Save; recovered: boolean
         playerName: typeof value.playerName === 'string' && value.playerName.trim().length >= 2 && value.playerName.length <= 20 ? value.playerName : null,
         showOnLeaderboard: value.showOnLeaderboard !== false,
         reported: (Array.isArray(value.reported) ? value.reported : []).filter((id): id is string => typeof id === 'string' && GAME_ID.test(id)).slice(-REPORTED_MEMORY),
-        challengeBest: Number.isSafeInteger(value.challengeBest) && (value.challengeBest as number) > 0 ? value.challengeBest as number : 0,
+        bestSingle: Number.isSafeInteger(value.bestSingle) && (value.bestSingle as number) > 0 ? value.bestSingle as number : 0,
+        bestDouble: Number.isSafeInteger(value.bestDouble) && (value.bestDouble as number) > 0 ? value.bestDouble as number : 0,
       },
       recovered: false,
     }

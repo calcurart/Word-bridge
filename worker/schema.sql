@@ -41,7 +41,7 @@ CREATE TABLE IF NOT EXISTS players (
   hidden INTEGER NOT NULL DEFAULT 0,       -- 1 = counted in totals but not shown on the leaderboard
   games INTEGER NOT NULL DEFAULT 0,        -- finished daily + practice games
   wins INTEGER NOT NULL DEFAULT 0,
-  best_challenge INTEGER NOT NULL DEFAULT 0,
+  best_challenge INTEGER NOT NULL DEFAULT 0,   -- old five-minute challenge (no longer shown)
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL
 );
@@ -73,3 +73,35 @@ CREATE TABLE IF NOT EXISTS challenge_runs (
 );
 CREATE INDEX IF NOT EXISTS runs_by_finish ON challenge_runs (finished_at);
 CREATE INDEX IF NOT EXISTS runs_by_ip ON challenge_runs (ip_hash, started_at);
+
+-- Challenge runs (Single and Double). The server keeps the clock, prompt, used words and score.
+CREATE TABLE IF NOT EXISTS runs (
+  id TEXT PRIMARY KEY,
+  player_id TEXT NOT NULL,
+  mode TEXT NOT NULL,                      -- 'single' or 'double'
+  prompt TEXT NOT NULL,
+  used TEXT NOT NULL,                      -- JSON array of words used this run
+  score INTEGER NOT NULL DEFAULT 0,
+  answers INTEGER NOT NULL DEFAULT 0,
+  started_at INTEGER NOT NULL,
+  ends_at INTEGER NOT NULL,
+  finished_at INTEGER,
+  ip_hash TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS runs_by_mode_finish ON runs (mode, finished_at);
+CREATE INDEX IF NOT EXISTS runs_by_ip_start ON runs (ip_hash, started_at);
+
+-- How often players give each answer to each prompt; rarer answers score more (Krillion-style).
+CREATE TABLE IF NOT EXISTS answer_counts (
+  slot TEXT NOT NULL,                      -- 'after' (PROMPT ___) or 'before' (___ PROMPT)
+  prompt TEXT NOT NULL,
+  answer TEXT NOT NULL,
+  picks INTEGER NOT NULL,
+  PRIMARY KEY (slot, prompt, answer)
+);
+CREATE TABLE IF NOT EXISTS prompt_counts (
+  slot TEXT NOT NULL,
+  prompt TEXT NOT NULL,
+  total INTEGER NOT NULL,
+  PRIMARY KEY (slot, prompt)
+);

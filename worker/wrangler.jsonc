@@ -5,6 +5,8 @@
   "main": "src/index.ts",
   "compatibility_date": "2026-06-01",
   "observability": { "enabled": true },
+  // The challenge dictionary (data/challenge-words.txt) is bundled as text.
+  "rules": [{ "type": "Text", "globs": ["**/*.txt"], "fallthrough": true }],
   "vars": {
     // Pages allowed to send suggestions (comma-separated). Add your own domain here if you move the site.
     "ALLOWED_ORIGINS": "https://calcurart.github.io,http://localhost:5173"

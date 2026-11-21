@@ -2,13 +2,15 @@ import { useEffect, useState } from 'react'
 import { defaultName, fetchLeaderboard, ONLINE, savePlayer } from '../lib/online.ts'
 import type { BoardRow, Leaderboard } from '../lib/online.ts'
 
-type Tab = 'today' | 'all' | 'bridges'
+type Board = 'single' | 'double' | 'bridges'
+type Period = 'today' | 'allTime'
 
 const number = (value: number) => value.toLocaleString()
 
 export function LeaderboardPanel({ playerId, onSettings }: { playerId: string; onSettings: () => void }) {
   const [data, setData] = useState<Leaderboard | null | 'loading'>('loading')
-  const [tab, setTab] = useState<Tab>('today')
+  const [board, setBoard] = useState<Board>('single')
+  const [period, setPeriod] = useState<Period>('today')
 
   useEffect(() => {
     let active = true
@@ -21,8 +23,8 @@ export function LeaderboardPanel({ playerId, onSettings }: { playerId: string; o
   if (!data) return <p className="dialog__lead" role="status">The leaderboard couldn’t be reached. Check your connection and try again.</p>
 
   const { totals, you } = data
-  const rows: BoardRow[] = tab === 'today' ? data.challengeToday : tab === 'all' ? data.challengeAllTime : data.mostBridges
-  const yourRank = tab === 'bridges' ? you?.rankBridges : tab === 'all' ? you?.rankChallenge : null
+  const rows: BoardRow[] = board === 'bridges' ? data.mostBridges : data[board][period]
+  const yourRank = board === 'bridges' ? you?.rankBridges : period === 'allTime' ? (board === 'single' ? you?.rankSingle : you?.rankDouble) : null
   // Equal scores share a rank (1, 2, 2, 4).
   const ranks = rows.map(row => rows.findIndex(other => other.value === row.value) + 1)
   const isYou = (row: BoardRow, index: number) =>
@@ -38,13 +40,20 @@ export function LeaderboardPanel({ playerId, onSettings }: { playerId: string; o
       </dl>
 
       <div className="segmented segmented--small board-panel__tabs" role="group" aria-label="Leaderboard">
-        {([['today', 'Challenge today'], ['all', 'Challenge best'], ['bridges', 'Most bridges']] as const).map(([value, label]) => (
-          <button key={value} type="button" className="segmented__button" aria-pressed={tab === value} onClick={() => setTab(value)}>{label}</button>
+        {([['single', 'Single'], ['double', 'Double'], ['bridges', 'Most bridges']] as const).map(([value, label]) => (
+          <button key={value} type="button" className="segmented__button" aria-pressed={board === value} onClick={() => setBoard(value)}>{label}</button>
         ))}
       </div>
+      {board !== 'bridges' && (
+        <div className="segmented segmented--small board-panel__period" role="group" aria-label="Period">
+          {([['today', 'Today'], ['allTime', 'All time']] as const).map(([value, label]) => (
+            <button key={value} type="button" className="segmented__button" aria-pressed={period === value} onClick={() => setPeriod(value)}>{label}</button>
+          ))}
+        </div>
+      )}
 
       {rows.length === 0 ? (
-        <p className="stats__empty">{tab === 'bridges' ? 'No finished bridges yet.' : 'No challenge scores yet. Be the first!'}</p>
+        <p className="stats__empty">{board === 'bridges' ? 'No finished bridges yet.' : 'No scores yet. Be the first!'}</p>
       ) : (
         <ol className="board-panel__list">
           {rows.map((row, index) => (
@@ -53,7 +62,7 @@ export function LeaderboardPanel({ playerId, onSettings }: { playerId: string; o
               <span className="board-panel__name">{row.name}{isYou(row, index) && <span className="board-panel__you"> (you)</span>}</span>
               <span className="board-panel__value">
                 {number(row.value)}
-                <small>{tab === 'bridges' ? ` ${row.value === 1 ? 'bridge' : 'bridges'} · ${number(row.wins ?? 0)} won` : ' pts'}</small>
+                <small>{board === 'bridges' ? ` ${row.value === 1 ? 'bridge' : 'bridges'} · ${number(row.wins ?? 0)} won` : ' pts'}</small>
               </span>
             </li>
           ))}
@@ -62,11 +71,11 @@ export function LeaderboardPanel({ playerId, onSettings }: { playerId: string; o
 
       <p className="dialog__fine">
         {you
-          ? <>You’re playing as <strong>{you.name}</strong>{you.hidden ? ' (hidden from the leaderboard)' : ''}: {number(you.games)} {you.games === 1 ? 'bridge' : 'bridges'}, best challenge {you.best}.{' '}</>
+          ? <>You’re playing as <strong>{you.name}</strong>{you.hidden ? ' (hidden from the leaderboard)' : ''}: {number(you.games)} {you.games === 1 ? 'bridge' : 'bridges'}, best Single {you.bestSingle}, best Double {you.bestDouble}.{' '}</>
           : 'Finish a bridge or a challenge to appear here. '}
         <button type="button" className="link-button" onClick={onSettings}>Change name</button>
       </p>
-      <p className="dialog__fine">Every finished Daily and Practice game counts. Scores come from players’ browsers and are checked, but this is a casual game, not a cheat-proof competition.</p>
+      <p className="dialog__fine">Every finished Daily and Practice game counts. Challenge answers are checked and scored by the server, but this is a casual game, not a cheat-proof competition.</p>
     </div>
   )
 }

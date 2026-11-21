@@ -8,7 +8,11 @@
 // for rate limiting, and suggestion records are deleted after 30 days.
 //
 // It also counts finished games and runs the leaderboard and challenge scoring: see scores.ts.
-import { finishRun, leaderboard, reportGame, startRun, updatePlayer } from './scores.ts'
+import dictionaryText from '../data/challenge-words.txt'
+import { answer, finish, skip, startRun } from './challenge-api.ts'
+import type { ChallengeContext } from './challenge-api.ts'
+import { parseDictionary } from './challenge-engine.ts'
+import { leaderboard, reportGame, updatePlayer } from './scores.ts'
 import type { Context } from './scores.ts'
 import type { Env } from './types.ts'
 import { judge, parsePages, WORD, wiktionaryUrl } from './verify.ts'
@@ -20,6 +24,9 @@ const PER_IP_PER_HOUR = 20
 const ADDITIONS_PER_DAY = 300
 const LOOKUP_CACHE_MS = 7 * DAY
 const USER_AGENT = 'WordBridgePhraseCheck/1.0 (word game phrase checker; Cloudflare Worker)'
+
+// The challenge dictionary is parsed once when the Worker starts, not on every request.
+const DICTIONARY = parseDictionary(dictionaryText)
 
 type Status = 'added' | 'exists' | 'invalid' | 'not-found' | 'offensive' | 'unfamiliar' | 'rate-limited' | 'error'
 
@@ -52,18 +59,21 @@ export default {
         if (!allowed.includes(origin)) return json({ status: 'invalid' }, 403, cors)
         return await suggest(request, env, cors)
       }
-      const scoreRoutes: Record<string, (ctx: Context) => Promise<Response>> = {
+      const scoreRoutes: Record<string, (ctx: Context & ChallengeContext) => Promise<Response>> = {
         'POST /games': ctx => reportGame(request, ctx),
         'POST /challenge/start': ctx => startRun(request, ctx),
-        'POST /challenge/finish': ctx => finishRun(request, ctx),
+        'POST /challenge/answer': ctx => answer(request, ctx),
+        'POST /challenge/skip': ctx => skip(request, ctx),
+        'POST /challenge/finish': ctx => finish(request, ctx),
         'POST /player': ctx => updatePlayer(request, ctx),
         'GET /leaderboard': ctx => leaderboard(url, ctx),
       }
       const handler = scoreRoutes[`${request.method} ${url.pathname}`]
       if (handler) {
         if (!allowed.includes(origin)) return json({ status: 'invalid' }, 403, cors)
-        const ctx: Context = {
+        const ctx: Context & ChallengeContext = {
           db: env.DB,
+          dictionary: DICTIONARY,
           now: Date.now(),
           ipHash: await hashIp(env, request.headers.get('CF-Connecting-IP') ?? 'unknown'),
           json: (body, status = 200) => json(body, status, { ...cors, 'Cache-Control': 'no-store' }),

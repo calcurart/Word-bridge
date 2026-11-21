@@ -1,70 +1,77 @@
 import { useEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
-import {
-  CHALLENGE_SECONDS, checkAnswer, formatClock, MAX_ANSWERS, nextPrompt, pickPrompt, SKIP_PENALTY_SECONDS,
-} from '../lib/challenge.ts'
-import type { WordGraph } from '../lib/graph.ts'
-import { finishChallenge, ONLINE, startChallenge } from '../lib/online.ts'
-import type { ChallengeResult } from '../lib/online.ts'
-import { CheckIcon, CrossIcon, RefreshIcon, TimerIcon, TrophyIcon } from './icons.tsx'
+import { CHALLENGE_SECONDS, formatClock, rarity, SKIP_PENALTY_SECONDS } from '../lib/challenge.ts'
+import type { ChallengeMode } from '../lib/challenge.ts'
+import { answerChallenge, finishChallenge, ONLINE, skipChallenge, startChallenge } from '../lib/online.ts'
+import type { AnswerOutcome, AnswerResult, ChallengeResult } from '../lib/online.ts'
+import { RefreshIcon, TimerIcon, TrophyIcon } from './icons.tsx'
 
 type Props = {
-  graph: WordGraph
   playerId: string
   playerName: string | null
-  best: number
-  onBest: (score: number) => void
+  bests: Record<ChallengeMode, number>
+  onBest: (mode: ChallengeMode, score: number) => void
   onAnnounce: (text: string) => void
   onLeaderboard: () => void
 }
 
-type Made = { prompt: string; answer: string; phrase: string }
-type Feedback = { ok: boolean; text: string; key: number }
-
-type Run = {
-  endsAt: number
-  prompt: string
-  used: Set<string>
-  made: Made[]
-  /** Server run ID, requested when the run starts (null when offline). */
-  ticket: Promise<string | null>
-}
-
+type Running = { mode: ChallengeMode; run: string; prompt: string; endsAt: number; score: number; made: AnswerResult[][] }
 type Phase =
-  | { kind: 'intro' }
-  | { kind: 'running'; run: Run }
-  | { kind: 'over'; made: Made[]; result: ChallengeResult | 'offline' | 'pending'; newBest: boolean }
+  | { kind: 'choose'; error?: string }
+  | { kind: 'starting'; mode: ChallengeMode }
+  | { kind: 'running'; game: Running }
+  | { kind: 'over'; mode: ChallengeMode; score: number; made: AnswerResult[][]; result: ChallengeResult | 'pending'; newBest: boolean }
 
-const REASONS = {
-  empty: 'Type a word first.',
-  'not-one-word': 'One word, letters only.',
-  same: 'That’s the same word.',
-  used: 'Already used in this run. Try another word.',
-  unknown: 'Not in this game’s dictionary.',
+type Feedback = { ok: true; results: AnswerResult[]; gained: number; key: number } | { ok: false; text: string; key: number }
+
+const MODES: Record<ChallengeMode, { title: string; blurb: string; example: string }> = {
+  single: {
+    title: 'Single',
+    blurb: 'Type one word that comes after the prompt.',
+    example: 'FOREST → FIRE (forest fire)',
+  },
+  double: {
+    title: 'Double',
+    blurb: 'Type two words: one that goes before the prompt and one after it.',
+    example: 'RAIN + FOREST + FIRE (rainforest, forest fire)',
+  },
 }
 
-export function ChallengeBoard({ graph, playerId, playerName, best, onBest, onAnnounce, onLeaderboard }: Props) {
-  const [phase, setPhase] = useState<Phase>({ kind: 'intro' })
+const REASONS: Record<Extract<AnswerOutcome, { ok: false }>['reason'], string> = {
+  missing: 'Type a word in each box.',
+  'not-one-word': 'One word per box, letters only.',
+  same: 'That’s the prompt word itself.',
+  used: 'Already used in this run. Try another word.',
+  'same-pair': 'Use two different words.',
+  unknown: 'Not a word or phrase we can find (Wiktionary or Urban Dictionary).',
+  time: 'Time’s up!',
+  error: 'Couldn’t reach the server. Try again.',
+}
+
+export function ChallengeBoard({ playerId, playerName, bests, onBest, onAnnounce, onLeaderboard }: Props) {
+  const [phase, setPhase] = useState<Phase>({ kind: 'choose' })
   const [now, setNow] = useState(() => Date.now())
-  const [value, setValue] = useState('')
+  const [before, setBefore] = useState('')
+  const [after, setAfter] = useState('')
+  const [busy, setBusy] = useState(false)
   const [feedback, setFeedback] = useState<Feedback | null>(null)
-  const input = useRef<HTMLInputElement>(null)
+  const beforeInput = useRef<HTMLInputElement>(null)
+  const afterInput = useRef<HTMLInputElement>(null)
   const heading = useRef<HTMLHeadingElement>(null)
-  const warned = useRef<Set<number>>(new Set())
+  const warned = useRef(new Set<number>())
+  const finishing = useRef<string | null>(null)
 
-  const running = phase.kind === 'running' ? phase.run : null
-  const remaining = running ? Math.max(0, running.endsAt - now) : 0
+  const game = phase.kind === 'running' ? phase.game : null
+  const remaining = game ? Math.max(0, game.endsAt - now) : 0
 
-  // Tick the clock while a run is going.
   useEffect(() => {
-    if (!running) return
+    if (!game) return
     const timer = window.setInterval(() => setNow(Date.now()), 200)
     return () => window.clearInterval(timer)
-  }, [running])
+  }, [game])
 
-  // Time warnings for screen reader users, and the end of the run.
   useEffect(() => {
-    if (!running) return
+    if (!game) return
     const seconds = Math.ceil(remaining / 1000)
     for (const mark of [60, 10]) {
       if (seconds <= mark && seconds > 0 && !warned.current.has(mark)) {
@@ -72,167 +79,231 @@ export function ChallengeBoard({ graph, playerId, playerName, best, onBest, onAn
         onAnnounce(mark === 60 ? 'One minute left.' : 'Ten seconds left.')
       }
     }
-    if (remaining <= 0) void finish(running)
+    if (remaining <= 0 && !busy) void finish(game)
   })
 
-  function start() {
-    const used = new Set<string>()
-    const prompt = pickPrompt(graph, used)
-    used.add(prompt)
-    warned.current = new Set()
-    const ticket = ONLINE && playerId ? startChallenge(playerId, playerName ?? undefined) : Promise.resolve(null)
-    setNow(Date.now())
-    setValue('')
-    setFeedback(null)
-    setPhase({ kind: 'running', run: { endsAt: Date.now() + CHALLENGE_SECONDS * 1000, prompt, used, made: [], ticket } })
-    onAnnounce(`Go! Your first word is ${prompt.toUpperCase()}.`)
-    window.setTimeout(() => input.current?.focus(), 0)
-  }
+  const focusFirst = (_mode: ChallengeMode) => undefined
+  useEffect(() => {
+    if (!game) return
+    ;(game.mode === 'double' ? beforeInput : afterInput).current?.focus()
+  }, [game?.run, game?.prompt])
 
-  async function finish(run: Run) {
-    if (phase.kind !== 'running' || phase.run !== run) return
-    const score = run.made.length
-    const newBest = score > best
-    if (newBest) onBest(score)
-    setPhase({ kind: 'over', made: run.made, result: 'pending', newBest })
-    onAnnounce(`Time’s up! You made ${score} ${score === 1 ? 'connection' : 'connections'}.`)
-    window.setTimeout(() => heading.current?.focus(), 0)
-    const id = await run.ticket
-    const result = id ? await finishChallenge(playerId, id, run.made.map(item => [item.prompt, item.answer] as const)) : 'offline'
-    setPhase(current => (current.kind === 'over' && current.made === run.made ? { ...current, result } : current))
-  }
-
-  function submit(event: FormEvent) {
-    event.preventDefault()
-    if (!running) return
-    const check = checkAnswer(graph, running.prompt, value, running.used)
-    if (!check.ok) {
-      setFeedback({ ok: false, text: REASONS[check.reason], key: Date.now() })
-      input.current?.select()
+  async function start(mode: ChallengeMode) {
+    if (!playerId) return
+    setPhase({ kind: 'starting', mode })
+    const started = await startChallenge(playerId, mode, playerName ?? undefined)
+    if (!started) {
+      setPhase({ kind: 'choose', error: 'Couldn’t start a challenge. Check your connection and try again.' })
       return
     }
-    const made = [...running.made, { prompt: running.prompt, answer: check.word, phrase: check.link.phrase }]
-    const used = new Set(running.used).add(check.word)
-    const prompt = nextPrompt(graph, check.word, used)
-    used.add(prompt)
-    setPhase({ kind: 'running', run: { ...running, prompt, used, made } })
-    setValue('')
-    setFeedback({ ok: true, text: check.link.phrase, key: Date.now() })
-    onAnnounce(`${check.link.phrase}. ${made.length} points. Next word: ${prompt.toUpperCase()}.`)
-    if (made.length >= MAX_ANSWERS) void finish({ ...running, made })
+    warned.current = new Set()
+    finishing.current = null
+    setBefore('')
+    setAfter('')
+    setFeedback(null)
+    setNow(Date.now())
+    setPhase({ kind: 'running', game: { mode, run: started.run, prompt: started.prompt, endsAt: Date.now() + started.endsIn, score: 0, made: [] } })
+    onAnnounce(`Go! Your first word is ${started.prompt.toUpperCase()}.`)
+    focusFirst(mode)
   }
 
-  function skip() {
-    if (!running) return
-    const used = new Set(running.used)
-    const prompt = pickPrompt(graph, used)
-    used.add(prompt)
-    setPhase({ kind: 'running', run: { ...running, prompt, used, endsAt: running.endsAt - SKIP_PENALTY_SECONDS * 1000 } })
-    setValue('')
+  async function finish(current: Running) {
+    if (finishing.current === current.run) return
+    finishing.current = current.run
+    const newBest = current.score > bests[current.mode]
+    if (newBest) onBest(current.mode, current.score)
+    setPhase({ kind: 'over', mode: current.mode, score: current.score, made: current.made, result: 'pending', newBest })
+    onAnnounce(`Time’s up! You scored ${current.score} points.`)
+    window.setTimeout(() => heading.current?.focus(), 0)
+    const result = await finishChallenge(playerId, current.run)
+    setPhase(state => (state.kind === 'over' && state.made === current.made ? { ...state, result } : state))
+  }
+
+  async function submit(event: FormEvent) {
+    event.preventDefault()
+    if (!game || busy) return
+    if (game.mode === 'double' && before.trim() === '') { beforeInput.current?.focus(); return }
+    if (after.trim() === '') { afterInput.current?.focus(); return }
+    setBusy(true)
+    const outcome = await answerChallenge(playerId, game.run, game.mode === 'double' ? { before, after } : { after })
+    setBusy(false)
+    if (!outcome.ok) {
+      if (outcome.reason === 'time') { void finish(game); return }
+      setFeedback({ ok: false, text: REASONS[outcome.reason], key: Date.now() })
+      const target = outcome.slot === 'before' ? beforeInput : afterInput
+      target.current?.select()
+      target.current?.focus()
+      if (outcome.endsIn !== undefined) setPhase({ kind: 'running', game: { ...game, endsAt: Date.now() + outcome.endsIn } })
+      return
+    }
+    const next: Running = { ...game, prompt: outcome.prompt, score: outcome.score, endsAt: Date.now() + outcome.endsIn, made: [...game.made, outcome.results] }
+    setPhase({ kind: 'running', game: next })
+    setBefore('')
+    setAfter('')
+    setFeedback({ ok: true, results: outcome.results, gained: outcome.gained, key: Date.now() })
+    onAnnounce(`${outcome.results.map(item => `${item.phrase}, ${item.points} points`).join('; ')}. Next word: ${outcome.prompt.toUpperCase()}.`)
+    focusFirst(game.mode)
+  }
+
+  async function skip() {
+    if (!game || busy) return
+    setBusy(true)
+    const skipped = await skipChallenge(playerId, game.run)
+    setBusy(false)
+    if (!skipped) return
+    setPhase({ kind: 'running', game: { ...game, prompt: skipped.prompt, endsAt: Date.now() + skipped.endsIn } })
+    setBefore('')
+    setAfter('')
     setFeedback({ ok: false, text: `Skipped (−${SKIP_PENALTY_SECONDS} seconds).`, key: Date.now() })
-    onAnnounce(`Skipped. New word: ${prompt.toUpperCase()}.`)
-    input.current?.focus()
+    onAnnounce(`Skipped. New word: ${skipped.prompt.toUpperCase()}.`)
+    focusFirst(game.mode)
   }
 
-  if (phase.kind === 'intro') {
+  if (!ONLINE) {
+    return <section className="challenge"><p className="challenge__intro">Challenge mode needs the online word service, which isn’t set up for this copy of the game.</p></section>
+  }
+
+  if (phase.kind === 'choose' || phase.kind === 'starting') {
     return (
       <section className="challenge" aria-labelledby="challenge-title">
         <div className="challenge__intro">
           <TimerIcon className="challenge__badge" width="34" height="34" />
           <h2 id="challenge-title" className="challenge__title">Five-minute challenge</h2>
           <p>
-            You’ll get a word like <strong>FOREST</strong>. Type a word that makes a familiar word or phrase with it,
-            before or after: <em>RAIN</em> (rainforest) or <em>FIRE</em> (forest fire). Each one scores a point, and your
-            answer usually becomes the next word.
+            Make as many words and phrases as you can with the prompt word, joined (<em>sunflower</em>) or spaced
+            (<em>forest fire</em>). Rare answers score more: <strong>10</strong> for the obvious one, up to <strong>100</strong> for
+            something nobody else thinks of.
           </p>
+          <div className="challenge__modes">
+            {(['single', 'double'] as const).map(mode => (
+              <div key={mode} className="challenge__mode">
+                <h3>{MODES[mode].title}</h3>
+                <p>{MODES[mode].blurb}</p>
+                <p className="challenge__example">{MODES[mode].example}</p>
+                {bests[mode] > 0 && <p className="challenge__best">Your best: <strong>{bests[mode]}</strong></p>}
+                <button
+                  type="button" className="btn btn--primary" onClick={() => void start(mode)}
+                  disabled={phase.kind === 'starting' || !playerId}
+                >
+                  {phase.kind === 'starting' && phase.mode === mode ? 'Starting…' : `Play ${MODES[mode].title}`}
+                </button>
+              </div>
+            ))}
+          </div>
           <ul className="challenge__rules">
-            <li>Each word can be used once per run.</li>
-            <li>Stuck? Skip to a new word for {SKIP_PENALTY_SECONDS} seconds.</li>
-            <li>{ONLINE ? 'Scores go on the global leaderboard.' : 'Scores are kept on this device.'}</li>
+            <li>Each word can be used once per run. Stuck? Skip for {SKIP_PENALTY_SECONDS} seconds.</li>
+            <li>Words are checked against Wiktionary, plus Urban Dictionary for newer slang.</li>
+            <li>Rarity comes from how common a phrase is and how few other players give it.</li>
           </ul>
-          {best > 0 && <p className="challenge__best">Your best: <strong>{best}</strong></p>}
-          <button type="button" className="btn btn--primary challenge__start" onClick={start}>Start the clock</button>
+          {phase.kind === 'choose' && phase.error && <p className="challenge__error" role="alert">{phase.error}</p>}
         </div>
       </section>
     )
   }
 
   if (phase.kind === 'over') {
-    const score = phase.made.length
     const result = phase.result
     return (
       <section className="challenge result" aria-labelledby="challenge-over">
         <h2 id="challenge-over" className="result__title" tabIndex={-1} ref={heading}>Time’s up!</h2>
-        <p className="challenge__score-big">{score}</p>
+        <p className="challenge__score-big">{phase.score}</p>
         <p className="result__summary">
-          {score === 1 ? 'connection' : 'connections'}{phase.newBest ? ' · new personal best!' : best > 0 ? ` · best ${best}` : ''}
+          points · {MODES[phase.mode].title}{phase.newBest ? ' · new personal best!' : bests[phase.mode] > 0 ? ` · best ${bests[phase.mode]}` : ''}
         </p>
         <p className="challenge__rank" role="status">
           {result === 'pending' && 'Sending your score…'}
-          {result === 'offline' && 'Score kept on this device (the leaderboard couldn’t be reached).'}
-          {typeof result === 'object' && result.status === 'scored' &&
-            `#${result.rankToday} today · #${result.rankAllTime} all time on the leaderboard`}
-          {typeof result === 'object' && result.status !== 'scored' && 'This score couldn’t be added to the leaderboard.'}
+          {result !== 'pending' && result.status === 'scored' && `#${result.rankToday} today · #${result.rankAllTime} all time (${MODES[phase.mode].title})`}
+          {result !== 'pending' && result.status !== 'scored' && 'This score couldn’t be added to the leaderboard.'}
         </p>
-        {phase.made.length > 0 && (
-          <ul className="challenge__made" aria-label="Connections you made">
-            {phase.made.map((item, index) => <li key={index}>{item.phrase}</li>)}
-          </ul>
-        )}
+        {phase.made.length > 0 && <Made made={phase.made} />}
         <div className="result__actions">
-          <button type="button" className="btn btn--primary" onClick={start}><RefreshIcon /> Play again</button>
+          <button type="button" className="btn btn--primary" onClick={() => void start(phase.mode)}><RefreshIcon /> Play again</button>
           <button type="button" className="btn btn--quiet" onClick={onLeaderboard}><TrophyIcon /> Leaderboard</button>
         </div>
+        <button type="button" className="link-button challenge__switch" onClick={() => setPhase({ kind: 'choose' })}>
+          Switch to {phase.mode === 'single' ? 'Double' : 'Single'}
+        </button>
       </section>
     )
   }
 
-  const run = phase.run
-  const fraction = remaining / (CHALLENGE_SECONDS * 1000)
+  const current = phase.game
+  const prompt = current.prompt.toUpperCase()
   return (
-    <section className="challenge" aria-label="Challenge in progress">
+    <section className="challenge" aria-label={`${MODES[current.mode].title} challenge in progress`}>
       <div className="challenge__bar">
         <span className={`challenge__clock${remaining < 30_000 ? ' challenge__clock--low' : ''}`} aria-label={`${formatClock(remaining)} left`}>
           <TimerIcon width="18" height="18" /> {formatClock(remaining)}
         </span>
-        <span className="challenge__score" aria-label={`Score ${run.made.length}`}>{run.made.length} <small>pts</small></span>
+        <span className="challenge__mode-tag">{MODES[current.mode].title}</span>
+        <span className="challenge__score" aria-label={`Score ${current.score}`}>{current.score} <small>pts</small></span>
       </div>
-      <div className="challenge__time" aria-hidden="true"><span style={{ width: `${fraction * 100}%` }} /></div>
+      <div className="challenge__time" aria-hidden="true"><span style={{ width: `${(remaining / (CHALLENGE_SECONDS * 1000)) * 100}%` }} /></div>
 
-      <div className="challenge__prompt">
-        <span className="challenge__slot" aria-hidden="true">?</span>
-        <span key={run.prompt} className="challenge__word">{run.prompt.toUpperCase()}</span>
-        <span className="challenge__slot" aria-hidden="true">?</span>
-      </div>
-      <p className="challenge__hint">A word that goes before or after it</p>
-
-      <form className="challenge__form" onSubmit={submit} noValidate>
-        <label className="sr-only" htmlFor="challenge-answer">Word that goes with {run.prompt}</label>
+      <form className={`challenge__play challenge__play--${current.mode}`} onSubmit={submit} noValidate>
+        {current.mode === 'double' && (
+          <>
+            <label className="sr-only" htmlFor="challenge-before">Word that goes before {prompt}</label>
+            <input
+              ref={beforeInput} id="challenge-before" className="challenge__input" value={before} placeholder={`___ ${current.prompt}`}
+              onChange={event => setBefore(event.target.value)}
+              onKeyDown={event => {
+                if (event.key === 'Enter' && after.trim() === '') { event.preventDefault(); afterInput.current?.focus() }
+              }}
+              autoComplete="off" autoCorrect="off" autoCapitalize="none" spellCheck={false} enterKeyHint="next" maxLength={30}
+            />
+          </>
+        )}
+        <span key={current.prompt} className="challenge__word">{prompt}</span>
+        <label className="sr-only" htmlFor="challenge-after">Word that goes after {prompt}</label>
         <input
-          ref={input} id="challenge-answer" className="challenge__input" value={value}
-          onChange={event => setValue(event.target.value)} autoComplete="off" autoCorrect="off" autoCapitalize="none"
-          spellCheck={false} enterKeyHint="go" maxLength={24} placeholder="Your word"
+          ref={afterInput} id="challenge-after" className="challenge__input" value={after} placeholder={`${current.prompt} ___`}
+          onChange={event => setAfter(event.target.value)}
+          autoComplete="off" autoCorrect="off" autoCapitalize="none" spellCheck={false} enterKeyHint="go" maxLength={30}
         />
-        <button type="submit" className="btn btn--primary">Go</button>
+        <button type="submit" className="btn btn--primary challenge__go" disabled={busy}>{busy ? 'Checking…' : 'Go'}</button>
       </form>
 
-      <p key={feedback?.key} className={`challenge__feedback${feedback ? (feedback.ok ? ' challenge__feedback--good' : ' challenge__feedback--bad') : ''}`}>
-        {feedback && (feedback.ok
-          ? <><CheckIcon width="16" height="16" /> {feedback.text} <strong>+1</strong></>
-          : <><CrossIcon width="16" height="16" /> {feedback.text}</>)}
+      <div key={feedback?.key} className={`challenge__feedback${feedback ? (feedback.ok ? ' challenge__feedback--good' : ' challenge__feedback--bad') : ''}`} role="status">
+        {feedback?.ok && (
+          <>
+            {feedback.results.map(item => <Points key={item.slot} item={item} />)}
+            {feedback.results.length > 1 && <strong className="challenge__gained">+{feedback.gained}</strong>}
+          </>
+        )}
+        {feedback && !feedback.ok && feedback.text}
         {!feedback && ' '}
-      </p>
-
-      <div className="challenge__actions">
-        <button type="button" className="btn btn--quiet btn--small" onClick={skip}>Skip word (−{SKIP_PENALTY_SECONDS}s)</button>
-        <button type="button" className="link-button" onClick={() => void finish(run)}>End run</button>
       </div>
 
-      {run.made.length > 0 && (
-        <ul className="challenge__made challenge__made--live" aria-label="Your connections so far">
-          {run.made.slice(-6).reverse().map((item, index) => <li key={run.made.length - index}>{item.phrase}</li>)}
-        </ul>
-      )}
+      <div className="challenge__actions">
+        <button type="button" className="btn btn--quiet btn--small" onClick={() => void skip()} disabled={busy}>Skip word (−{SKIP_PENALTY_SECONDS}s)</button>
+        <button type="button" className="link-button" onClick={() => void finish(current)}>End run</button>
+      </div>
+
+      {current.made.length > 0 && <Made made={current.made.slice(-5).reverse()} live />}
     </section>
+  )
+}
+
+function Points({ item }: { item: AnswerResult }) {
+  const level = rarity(item.points)
+  return (
+    <span className={`points points--${level.tier}`}>
+      <span className="points__phrase">{item.phrase}</span>
+      <span className="points__value">+{item.points}</span>
+      <span className="points__label">{level.label}{item.source === 'urban' ? ' · slang' : ''}</span>
+    </span>
+  )
+}
+
+function Made({ made, live = false }: { made: AnswerResult[][]; live?: boolean }) {
+  return (
+    <ul className={`challenge__made${live ? ' challenge__made--live' : ''}`} aria-label="Your words">
+      {made.flat().map((item, index) => (
+        <li key={`${item.phrase}-${index}`} className={`points--${rarity(item.points).tier}`}>
+          {item.phrase} <strong>{item.points}</strong>
+        </li>
+      ))}
+    </ul>
   )
 }

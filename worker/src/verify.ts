@@ -14,7 +14,7 @@ export const WORD = /^[a-z]{2,15}$/
 
 // Exact words that are never added, whatever the dictionary says. Slurs are also caught by
 // Wiktionary's "offensive"/"derogatory"/"slur" labels below.
-const BLOCKED_WORDS = new Set([
+export const BLOCKED_WORDS: ReadonlySet<string> = new Set([
   'arse', 'ass', 'bastard', 'bitch', 'bollocks', 'boob', 'boobs', 'cock', 'crap', 'cunt', 'damn', 'dick', 'dildo',
   'fag', 'fuck', 'hell', 'jizz', 'nazi', 'penis', 'piss', 'porn', 'prick', 'pussy', 'rape', 'sex', 'sexy', 'shit',
   'slut', 'tit', 'tits', 'twat', 'vagina', 'wank', 'whore',
