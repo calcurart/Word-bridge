@@ -1,14 +1,17 @@
 // Challenge mode settings shared by the game and the server. Answers are checked and scored on the server
 // (worker/src/challenge-engine.ts), against a large dictionary built from Wiktionary.
 //
+// A run is ROUNDS prompts. Each prompt has ROUND_SECONDS; if time runs out, the game moves on to the next prompt.
+// Answers must be standalone English words (never a single letter or a fragment like "ful").
+//
 // SINGLE: one word that comes AFTER the prompt (FOREST -> FIRE, "forest fire").
 // DOUBLE: one word BEFORE and one AFTER the prompt (RAIN + FIRE -> "rainforest" + "forest fire").
 // Each word scores 10 (obvious) to 100 (nearly impossible), from how common it is and how rarely other players give it.
 
 export type ChallengeMode = 'single' | 'double'
 
-export const CHALLENGE_SECONDS = 300
-export const SKIP_PENALTY_SECONDS = 10
+export const ROUNDS = 10
+export const ROUND_SECONDS = 15
 
 /** "4:05" style clock. */
 export function formatClock(ms: number): string {

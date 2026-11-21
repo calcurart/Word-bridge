@@ -8,8 +8,9 @@
 //   <wiktionary-dir>/English_multiword_terms.json     page titles in "English multiword terms"
 //   <wiktionary-dir>/English_{vulgarities,offensive_terms,ethnic_slurs,derogatory_terms,swear_words}.json  excluded
 //   count_1w.txt / count_2w.txt                        Peter Norvig's word and two-word counts (Google web text)
-//   titles.gz (optional)                               Wikimedia's enwiktionary-latest-all-titles-in-ns0.gz: every page
-//                                                      title; two-word titles of everyday English words are added
+//   titles.gz                                          Wikimedia's enwiktionary-latest-all-titles-in-ns0.gz: every page
+//                                                      title; two-word titles of everyday English words are added, and
+//                                                      single-word titles decide what counts as a standalone word
 //
 // Output: one line per link "first second form base", where form is c (joined, "sunflower"), s (spaced,
 // "forest fire") or h (hyphenated), and base is the starting rarity: 10 (very common) to 100 (very rare).
@@ -23,8 +24,8 @@ import { parseLink } from '../src/lib/graph.ts'
 import { BLOCKED_WORDS } from '../worker/src/verify.ts'
 
 const [dir, file1, file2, titlesFile] = process.argv.slice(2)
-if (!dir || !file1 || !file2) {
-  console.error('Usage: node scripts/build-challenge-dictionary.ts <wiktionary-dir> <count_1w.txt> <count_2w.txt>')
+if (!dir || !file1 || !file2 || !titlesFile) {
+  console.error('Usage: node scripts/build-challenge-dictionary.ts <wiktionary-dir> <count_1w.txt> <count_2w.txt> <titles.gz>')
   process.exit(1)
 }
 
@@ -51,6 +52,26 @@ const readCounts = (file: string) => {
 const count1 = readCounts(file1)
 const count2 = readCounts(file2)
 const rank1 = new Map([...count1.keys()].map((word, index) => [word, index]))
+const titleLines = gunzipSync(readFileSync(titlesFile)).toString('utf8').split(String.fromCharCode(10))
+
+// Standalone words: common in English web text, a Wiktionary entry, and not a prefix or suffix on its own
+// (so CARE + N or CARE + FUL never count). Two-letter words only from a short list; single letters never.
+const FRAGMENTS = new Set([
+  'ful', 'ing', 'ism', 'ish', 'ness', 'ment', 'est', 'ity', 'ous', 'ive', 'ize', 'ise', 'ible', 'tion', 'sion', 'ance',
+  'ence', 'ent', 'ary', 'ery', 'ory', 'ess', 'ling', 'ster', 'dom', 'ure', 'ify', 'ology', 'ian', 'ist', 'ide', 'ine',
+  'ite', 'ium', 'oid', 'ose', 'ule', 'un', 're', 'pre', 'dis', 'mis', 'non', 'sub', 'inter', 'trans', 'multi', 'anti',
+  'de', 'ab', 'ad', 'ob', 'per', 'pro', 'com', 'con',
+])
+const SHORT_WORDS = new Set(['up', 'in', 'on', 'ox', 'ax', 'go', 'me', 'by', 'do', 'no', 'so', 'to', 'we', 'he', 'it', 'at',
+  'an', 'as', 'be', 'my', 'of', 'or', 'us', 'am', 'is', 'if', 'hi', 'ok', 'ex', 'oh', 'pa', 'ma'])
+const titleWords = new Set<string>()
+for (const line of titleLines) if (/^[a-z]+$/.test(line)) titleWords.add(line)
+const standalone = new Set<string>()
+for (const [word, rank] of rank1) {
+  if (rank > 100_000 || !/^[a-z]+$/.test(word) || FRAGMENTS.has(word) || !titleWords.has(word)) continue
+  if (word.length === 1 || (word.length === 2 && !SHORT_WORDS.has(word))) continue
+  standalone.add(word)
+}
 
 // A phrase Wiktionary labels vulgar, offensive, derogatory or a slur is left out. Single words only block a pair
 // when they are slurs or strongly offensive: many everyday words (box, hole, ball) also have a vulgar slang sense.
@@ -75,6 +96,7 @@ let curatedSource = true
 
 function add(a: string, b: string, form: Form) {
   if (!WORD.test(a) || !WORD.test(b) || a === b) return
+  if (!standalone.has(a) || !standalone.has(b)) return
   if (blockedParts.has(a) || blockedParts.has(b) || offensive.has(a + b) || offensive.has(`${a} ${b}`) || offensive.has(`${a}-${b}`)) return
   const key = `${a} ${b}`
   const entry = entries.get(key) ?? { forms: new Set<Form>(), frequency: frequencyOf(a, b), curated: false }
@@ -121,10 +143,10 @@ for (const title of readList('English_multiword_terms')) if (/^[a-z]+[ -][a-z]+$
 
 // All two-word Wiktionary titles (every language), kept when both words are everyday English and the phrase
 // is either in English web text or made of two very common English words.
-if (titlesFile) {
+{
   curatedSource = false
   let kept = 0
-  for (const line of gunzipSync(readFileSync(titlesFile)).toString('utf8').split(String.fromCharCode(10))) {
+  for (const line of titleLines) {
     if (!/^[a-z]+_[a-z]+$/.test(line)) continue
     const [a, b] = line.split('_')
     const ra = rank1.get(a) ?? Infinity
@@ -165,15 +187,19 @@ const base = (entry: Entry, key: string) => {
 const STOP = new Set('the of and to in is it for on with as by at an be this that from or are was not but have has had his her its our their your you we they he she him them me my so if no do does did can could would should will may might must shall than then there here what when where which who whom why how all any some each every one two three up out off over under into onto about'.split(' '))
 const next = new Map<string, number>()
 const previous = new Map<string, number>()
-for (const [key, entry] of entries) {
-  if (!entry.curated) continue
+for (const key of entries.keys()) {
   const [a, b] = key.split(' ')
   next.set(a, (next.get(a) ?? 0) + 1)
   previous.set(b, (previous.get(b) ?? 0) + 1)
 }
-const promptable = (word: string) => !/(ed|ing)$/.test(word) && !STOP.has(word) && word.length >= 3 && (rank1.get(word) ?? Infinity) < 15_000 && !offensive.has(word) && !blockedParts.has(word)
-const single = [...next.entries()].filter(([word, n]) => n >= 8 && promptable(word)).map(([word]) => word).sort()
-const double = [...next.keys()].filter(word => (next.get(word) ?? 0) >= 4 && (previous.get(word) ?? 0) >= 4 && promptable(word)).sort()
+// Prompts should be plain base words: no verb forms (gave, makes) and nothing rude.
+const NOT_PROMPTS = new Set('gave went took came made makes takes gets got goes says said does done seen even butt booty'.split(' '))
+const inflected = (word: string) => /(ed|ing)$/.test(word) || (word.endsWith('s') && !word.endsWith('ss') && standalone.has(word.slice(0, -1)))
+const promptable = (word: string) => !inflected(word) && !NOT_PROMPTS.has(word) && !STOP.has(word) && word.length >= 3 && (rank1.get(word) ?? Infinity) < 15_000 && !offensive.has(word) && !blockedParts.has(word)
+// Prompts need more than 25 connections: Single counts words that can follow; Double needs that many before AND after.
+const MIN_CONNECTIONS = 26
+const single = [...next.entries()].filter(([word, n]) => n >= MIN_CONNECTIONS && promptable(word)).map(([word]) => word).sort()
+const double = [...next.keys()].filter(word => (next.get(word) ?? 0) >= MIN_CONNECTIONS && (previous.get(word) ?? 0) >= MIN_CONNECTIONS && promptable(word)).sort()
 
 const lines = [
   '# Word Bridge challenge dictionary. Generated by scripts/build-challenge-dictionary.ts; do not edit by hand.',
@@ -190,10 +216,12 @@ const lines = [
   }),
 ]
 writeFileSync(new URL('../worker/data/challenge-words.txt', import.meta.url), lines.join('\n') + '\n')
+// The standalone-word list: every challenge answer (including live Wiktionary / Urban Dictionary finds) must be in it.
+writeFileSync(new URL('../worker/data/english-words.txt', import.meta.url), [...standalone].sort().join(String.fromCharCode(10)) + String.fromCharCode(10))
 
 const scores = [...entries.entries()].map(([key, entry]) => base(entry, key)).sort((x, y) => x - y)
 const at = (q: number) => scores[Math.floor(q * (scores.length - 1))]
-console.log(`links: ${entries.size}; single prompts: ${single.length}; double prompts: ${double.length}`)
+console.log(`links: ${entries.size}; standalone words: ${standalone.size}; single prompts: ${single.length}; double prompts: ${double.length}`)
 console.log(`base rarity percentiles: 10%=${at(0.1)} 25%=${at(0.25)} 50%=${at(0.5)} 75%=${at(0.75)} 90%=${at(0.9)}`)
 for (const sample of ['sun flower', 'forest fire', 'fire work', 'rain forest', 'tooth brush', 'hole punch', 'fire alarm']) {
   const entry = entries.get(sample)

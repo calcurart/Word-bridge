@@ -272,8 +272,14 @@ button:disabled { cursor: not-allowed; }
 .challenge__clock--low { color: var(--bad); }
 .challenge__score { font-family: var(--font-display); font-weight: 700; font-size: 1.6rem; color: var(--accent-strong); font-variant-numeric: tabular-nums; }
 .challenge__score small { font-family: var(--font-ui); font-size: 0.8rem; color: var(--muted); }
-.challenge__time { height: 6px; border-radius: 999px; background: var(--bg-deep); overflow: hidden; }
-.challenge__time span { display: block; height: 100%; background: var(--accent); border-radius: inherit; transition: width 200ms linear; }
+/* Time bar: shrinks over each word's 15 seconds and warms in colour as it runs low. */
+.challenge__time { height: 14px; border-radius: 999px; background: var(--bg-deep); border: 1px solid var(--line); overflow: hidden; }
+.challenge__time span { display: block; height: 100%; border-radius: inherit; background: var(--accent); transition: width 100ms linear, background-color 300ms ease; }
+.challenge__time--half span { background: var(--hint); }
+.challenge__time--low span { background: var(--bad); animation: time-pulse 600ms ease-in-out infinite alternate; }
+@keyframes time-pulse { from { opacity: 1; } to { opacity: 0.6; } }
+.challenge__round { font-weight: 600; color: var(--ink-soft); font-variant-numeric: tabular-nums; }
+.challenge__round strong { font-size: 1.25rem; color: var(--ink); }
 
 .challenge__prompt { display: flex; align-items: center; justify-content: center; gap: 10px; margin-top: 8px; }
 .challenge__word {

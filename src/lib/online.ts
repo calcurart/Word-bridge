@@ -36,40 +36,47 @@ export async function reportGame(report: GameReport): Promise<boolean> {
   return body?.status === 'counted' || body?.status === 'already-counted'
 }
 
-export type ChallengeStart = { run: string; prompt: string; endsIn: number }
+/** Where a run stands after a move: the prompt to show next, or done when the last round is over. */
+export type RoundState = { prompt: string; round: number; endsIn: number; score: number; done: boolean }
+export type ChallengeStart = { run: string; prompt: string; round: number; rounds: number; endsIn: number }
 
 export async function startChallenge(player: string, mode: ChallengeMode, name?: string): Promise<ChallengeStart | null> {
   const body = await post('/challenge/start', name ? { player, mode, name } : { player, mode })
   if (typeof body?.run !== 'string' || typeof body.prompt !== 'string') return null
-  return { run: body.run, prompt: body.prompt, endsIn: Number(body.endsIn) || 0 }
+  return { run: body.run, prompt: body.prompt, round: Number(body.round) || 1, rounds: Number(body.rounds) || 10, endsIn: Number(body.endsIn) || 0 }
 }
 
+const roundState = (body: Record<string, unknown>): RoundState => ({
+  prompt: String(body.prompt ?? ''),
+  round: Number(body.round) || 1,
+  endsIn: Number(body.endsIn) || 0,
+  score: Number(body.score) || 0,
+  done: body.done === true,
+})
+
 export type AnswerResult = { slot: 'before' | 'after'; word: string; phrase: string; points: number; source: string; players: number }
+export type AnswerReason = 'missing' | 'not-one-word' | 'not-a-word' | 'same' | 'used' | 'same-pair' | 'unknown' | 'error'
 export type AnswerOutcome =
-  | { ok: true; results: AnswerResult[]; gained: number; score: number; prompt: string; endsIn: number }
-  | { ok: false; reason: 'missing' | 'not-one-word' | 'same' | 'used' | 'same-pair' | 'unknown' | 'time' | 'error'; slot?: 'before' | 'after'; endsIn?: number }
+  | ({ ok: true; results: AnswerResult[]; gained: number } & RoundState)
+  | ({ ok: false; reason: 'time' } & RoundState)
+  | { ok: false; reason: AnswerReason; slot?: 'before' | 'after'; endsIn?: number }
 
 export async function answerChallenge(player: string, run: string, words: { before?: string; after: string }): Promise<AnswerOutcome> {
   const body = await post('/challenge/answer', { player, run, ...words })
   if (body?.ok === true && Array.isArray(body.results)) {
-    return {
-      ok: true,
-      results: body.results as AnswerResult[],
-      gained: Number(body.gained) || 0,
-      score: Number(body.score) || 0,
-      prompt: String(body.prompt),
-      endsIn: Number(body.endsIn) || 0,
-    }
+    return { ok: true, results: body.results as AnswerResult[], gained: Number(body.gained) || 0, ...roundState(body) }
   }
-  const reasons = ['missing', 'not-one-word', 'same', 'used', 'same-pair', 'unknown', 'time'] as const
-  const reason = reasons.find(item => item === body?.reason) ?? (body?.status === 'over' ? 'time' : 'error')
+  if (body?.reason === 'time' || body?.reason === 'over') return { ok: false, reason: 'time', ...roundState({ ...body, done: body.done ?? body.reason === 'over' }) }
+  const reasons: AnswerReason[] = ['missing', 'not-one-word', 'not-a-word', 'same', 'used', 'same-pair', 'unknown']
+  const reason = reasons.find(item => item === body?.reason) ?? 'error'
   const slot = body?.slot === 'before' || body?.slot === 'after' ? body.slot : undefined
   return { ok: false, reason, ...(slot ? { slot } : {}), ...(typeof body?.endsIn === 'number' ? { endsIn: body.endsIn } : {}) }
 }
 
-export async function skipChallenge(player: string, run: string): Promise<{ prompt: string; endsIn: number } | null> {
+/** Moves on to the next prompt: the Skip button, or the time bar running out. */
+export async function skipChallenge(player: string, run: string): Promise<RoundState | null> {
   const body = await post('/challenge/skip', { player, run })
-  return typeof body?.prompt === 'string' ? { prompt: body.prompt, endsIn: Number(body.endsIn) || 0 } : null
+  return body && typeof body.prompt === 'string' ? roundState(body) : null
 }
 
 export type ChallengeResult =

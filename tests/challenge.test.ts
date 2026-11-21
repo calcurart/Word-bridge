@@ -21,7 +21,9 @@ fire place c 30
 sun flower c 35
 camp fire c 40
 `
-const dictionary = parseDictionary(SAMPLE)
+const WORDS = 'forest fire floor rain work place sun flower camp care home'
+const dictionary = parseDictionary(SAMPLE, WORDS)
+const words = dictionary.words
 
 test('the dictionary reads links, written forms, base rarity and prompt lists', () => {
   assert.equal(dictionary.size, 7)
@@ -35,17 +37,22 @@ test('the dictionary reads links, written forms, base rarity and prompt lists', 
 
 test('Single takes one word after the prompt; Double one before and one after', () => {
   const used = new Set(['forest'])
-  assert.deepEqual(checkWords('single', 'forest', used, { after: ' Fire ' }), { after: { ok: true, word: 'fire' } })
-  assert.deepEqual(checkWords('single', 'forest', used, { after: '' }), { after: { ok: false, reason: 'missing' } })
-  assert.deepEqual(checkWords('single', 'forest', used, { after: 'forest' }), { after: { ok: false, reason: 'same' } })
-  assert.deepEqual(checkWords('single', 'forest', used, { after: 'forest fire' }), { after: { ok: false, reason: 'not-one-word' } })
-  assert.deepEqual(checkWords('single', 'fire', new Set(['forest', 'fire']), { after: 'forest' }), { after: { ok: false, reason: 'used' } })
-  assert.deepEqual(checkWords('double', 'forest', used, { before: 'rain', after: 'fire' }), {
+  assert.deepEqual(checkWords('single', 'forest', used, { after: ' Fire ' }, words), { after: { ok: true, word: 'fire' } })
+  assert.deepEqual(checkWords('single', 'forest', used, { after: '' }, words), { after: { ok: false, reason: 'missing' } })
+  assert.deepEqual(checkWords('single', 'forest', used, { after: 'forest' }, words), { after: { ok: false, reason: 'same' } })
+  assert.deepEqual(checkWords('single', 'forest', used, { after: 'forest fire' }, words), { after: { ok: false, reason: 'not-one-word' } })
+  assert.deepEqual(checkWords('single', 'fire', new Set(['forest', 'fire']), { after: 'forest' }, words), { after: { ok: false, reason: 'used' } })
+  assert.deepEqual(checkWords('double', 'forest', used, { before: 'rain', after: 'fire' }, words), {
     before: { ok: true, word: 'rain' }, after: { ok: true, word: 'fire' },
   })
-  assert.equal(checkWords('double', 'forest', used, { before: 'fire', after: 'fire' }).before?.ok, false)
-  assert.equal(checkWords('double', 'forest', used, { after: 'fire' }).before?.ok, false, 'Double needs both words')
+  assert.equal(checkWords('double', 'forest', used, { before: 'fire', after: 'fire' }, words).before?.ok, false)
+  assert.equal(checkWords('double', 'forest', used, { after: 'fire' }, words).before?.ok, false, 'Double needs both words')
   assert.equal(normalizeWord('Ünïcode'), null)
+  // Answers must be words on their own: no single letters or fragments (CARE + N, CARE + FUL).
+  assert.deepEqual(checkWords('single', 'care', used, { after: 'n' }, words), { after: { ok: false, reason: 'not-a-word' } })
+  assert.deepEqual(checkWords('single', 'care', used, { after: 'ful' }, words), { after: { ok: false, reason: 'not-a-word' } })
+  assert.deepEqual(checkWords('double', 'forest', used, { before: 'zz', after: 'fire' }, words).before, { ok: false, reason: 'not-a-word' })
+  assert.equal(words.has('care') && words.size, 11)
 })
 
 test('rarity points run from 10 to 100 and move toward what other players answer', () => {

@@ -15,6 +15,8 @@ export type Entry = { readonly form: Form; readonly base: number }
 
 export type Dictionary = {
   readonly links: ReadonlyMap<string, ReadonlyMap<string, Entry>>
+  /** Standalone English words. Every answer must be one of these. */
+  readonly words: ReadonlySet<string>
   readonly prompts: Readonly<Record<Mode, readonly string[]>>
   readonly size: number
 }
@@ -29,7 +31,7 @@ const OBVIOUS_SHARE = 0.25
 /** How many answers to a prompt before players' choices count as much as the base score. */
 const CROWD_HALF = 20
 
-export function parseDictionary(text: string): Dictionary {
+export function parseDictionary(text: string, wordsText = ''): Dictionary {
   const links = new Map<string, Map<string, Entry>>()
   const prompts: Record<Mode, string[]> = { single: [], double: [] }
   let size = 0
@@ -43,7 +45,8 @@ export function parseDictionary(text: string): Dictionary {
     next.set(b, { form: form as Form, base: Number(base) })
     size++
   }
-  return { links, prompts, size }
+  const words = new Set(wordsText.split(/\s+/).filter(Boolean))
+  return { links, prompts, size, words }
 }
 
 export function lookup(dictionary: Dictionary, first: string, second: string): Entry | undefined {
@@ -87,14 +90,15 @@ export function nextPrompt(dictionary: Dictionary, mode: Mode, after: string, us
 
 export type WordCheck =
   | { readonly ok: true; readonly word: string }
-  | { readonly ok: false; readonly reason: 'missing' | 'not-one-word' | 'same' | 'used' | 'same-pair' }
+  | { readonly ok: false; readonly reason: 'missing' | 'not-one-word' | 'not-a-word' | 'same' | 'used' | 'same-pair' }
 
 /** Format checks before any dictionary lookup. */
-export function checkWords(mode: Mode, prompt: string, used: ReadonlySet<string>, raw: { before?: unknown; after?: unknown }) {
+export function checkWords(mode: Mode, prompt: string, used: ReadonlySet<string>, raw: { before?: unknown; after?: unknown }, words: ReadonlySet<string>) {
   const one = (value: unknown): WordCheck => {
     if (typeof value !== 'string' || value.trim() === '') return { ok: false, reason: 'missing' }
     const word = normalizeWord(value)
     if (!word) return { ok: false, reason: 'not-one-word' }
+    if (!words.has(word)) return { ok: false, reason: 'not-a-word' }
     if (word === prompt) return { ok: false, reason: 'same' }
     if (used.has(word)) return { ok: false, reason: 'used' }
     return { ok: true, word }

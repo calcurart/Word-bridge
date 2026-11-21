@@ -9,6 +9,7 @@
 //
 // It also counts finished games and runs the leaderboard and challenge scoring: see scores.ts.
 import dictionaryText from '../data/challenge-words.txt'
+import wordsText from '../data/english-words.txt'
 import { answer, finish, skip, startRun } from './challenge-api.ts'
 import type { ChallengeContext } from './challenge-api.ts'
 import { parseDictionary } from './challenge-engine.ts'
@@ -26,7 +27,7 @@ const LOOKUP_CACHE_MS = 7 * DAY
 const USER_AGENT = 'WordBridgePhraseCheck/1.0 (word game phrase checker; Cloudflare Worker)'
 
 // The challenge dictionary is parsed once when the Worker starts, not on every request.
-const DICTIONARY = parseDictionary(dictionaryText)
+const DICTIONARY = parseDictionary(dictionaryText, wordsText)
 
 type Status = 'added' | 'exists' | 'invalid' | 'not-found' | 'offensive' | 'unfamiliar' | 'rate-limited' | 'error'
 

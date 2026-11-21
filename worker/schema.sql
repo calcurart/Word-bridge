@@ -83,6 +83,7 @@ CREATE TABLE IF NOT EXISTS runs (
   used TEXT NOT NULL,                      -- JSON array of words used this run
   score INTEGER NOT NULL DEFAULT 0,
   answers INTEGER NOT NULL DEFAULT 0,
+  round INTEGER NOT NULL DEFAULT 1,       -- current prompt number (1..10)
   started_at INTEGER NOT NULL,
   ends_at INTEGER NOT NULL,
   finished_at INTEGER,

@@ -210,14 +210,18 @@ involved: the Worker address is public.
 
 ## Challenge mode: Single and Double
 
-Five minutes to score as many points as possible from prompt words. Links count whether they're written joined
-(SUNFLOWER), spaced (FOREST FIRE) or hyphenated.
+A run is **10 prompt words, 15 seconds each**. A bar under the score shrinks as time runs out (teal, then amber, then
+red); when it's empty the next word appears automatically. Links count whether they're written joined (SUNFLOWER),
+spaced (FOREST FIRE) or hyphenated. **Answers must be standalone English words**: never a single letter or a fragment
+(CARE + N or CARE + FUL don't count), including answers found by live lookups.
 
 - **Single:** type one word that comes **after** the prompt. FOREST → FIRE (forest fire).
 - **Double:** type two words, one **before** and one **after** the prompt. RAIN + FOREST + FIRE (rainforest, forest fire).
 
-The word after the prompt becomes the next prompt when it's a good prompt word itself; otherwise a fresh one is
-drawn. Each word can be used once per run, and **Skip** costs 10 seconds.
+Prompt words have **more than 25 connections** (Single: more than 25 words that can follow; Double: more than 25
+before and more than 25 after), and are plain base words (no verb forms like GAVE or MAKES). The word after the prompt
+becomes the next prompt when it's a prompt word itself; otherwise a fresh one is drawn. Each word can be used once
+per run; **Skip** moves straight to the next word.
 
 **Scoring (inspired by [Krillion](https://krillion.io/)):** each word scores 10 (obvious) to 100 (nearly
 impossible). It starts from how common the phrase is in written English (the *base* score in the dictionary) and
@@ -240,10 +244,16 @@ Base scores from text counts run 10–80 (the top of the scale is earned when ot
 - Peter Norvig's `count_1w.txt` / `count_2w.txt` word counts (Google web text) for the base rarity;
 - the curated and community links of the main game.
 
+It also writes `worker/data/english-words.txt`, the **standalone-word list** every answer is checked against: words
+that are common in English web text and have a Wiktionary entry, minus known prefixes and suffixes (ful, ness, ment,
+ing, un, re…); two-letter words only from a short list, and never single letters. Dictionary pairs with a part
+that isn't standalone are dropped.
+
 Entries in Wiktionary's vulgar, offensive, derogatory, ethnic-slur and swear-word categories, and pairs using
 blocked words, are left out. To rebuild: fetch the category lists (titles via the Wiktionary API), download the two
-count files, run `node scripts/build-challenge-dictionary.ts <lists-dir> count_1w.txt count_2w.txt`, then deploy
-the Worker. Database changes for this mode: `worker/migrations/0002-single-double.sql` (once) and `schema.sql`.
+count files and `enwiktionary-latest-all-titles-in-ns0.gz` from dumps.wikimedia.org, run
+`node scripts/build-challenge-dictionary.ts <lists-dir> count_1w.txt count_2w.txt titles.gz`, then deploy the Worker.
+Upgrading an existing database: run `worker/migrations/0002-single-double.sql` and `0003-rounds.sql` once each.
 
 ## Global leaderboard
 

@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
-import { CHALLENGE_SECONDS, formatClock, rarity, SKIP_PENALTY_SECONDS } from '../lib/challenge.ts'
+import { rarity, ROUND_SECONDS, ROUNDS } from '../lib/challenge.ts'
 import type { ChallengeMode } from '../lib/challenge.ts'
 import { answerChallenge, finishChallenge, ONLINE, skipChallenge, startChallenge } from '../lib/online.ts'
-import type { AnswerOutcome, AnswerResult, ChallengeResult } from '../lib/online.ts'
+import type { AnswerReason, AnswerResult, ChallengeResult, RoundState } from '../lib/online.ts'
 import { RefreshIcon, TimerIcon, TrophyIcon } from './icons.tsx'
 
 type Props = {
@@ -15,21 +15,25 @@ type Props = {
   onLeaderboard: () => void
 }
 
-type Running = { mode: ChallengeMode; run: string; prompt: string; endsAt: number; score: number; made: AnswerResult[][] }
+type Running = {
+  mode: ChallengeMode; run: string; prompt: string; round: number; rounds: number
+  /** When this prompt's time runs out (local clock). */
+  endsAt: number
+  score: number
+  made: AnswerResult[][]
+}
 type Phase =
   | { kind: 'choose'; error?: string }
   | { kind: 'starting'; mode: ChallengeMode }
   | { kind: 'running'; game: Running }
-  | { kind: 'over'; mode: ChallengeMode; score: number; made: AnswerResult[][]; result: ChallengeResult | 'pending'; newBest: boolean }
+  | { kind: 'over'; mode: ChallengeMode; run: string; score: number; made: AnswerResult[][]; result: ChallengeResult | 'pending'; newBest: boolean }
 
 type Feedback = { ok: true; results: AnswerResult[]; gained: number; key: number } | { ok: false; text: string; key: number }
 
+const ROUND_MS = ROUND_SECONDS * 1000
+
 const MODES: Record<ChallengeMode, { title: string; blurb: string; example: string }> = {
-  single: {
-    title: 'Single',
-    blurb: 'Type one word that comes after the prompt.',
-    example: 'FOREST → FIRE (forest fire)',
-  },
+  single: { title: 'Single', blurb: 'Type one word that comes after the prompt.', example: 'FOREST → FIRE (forest fire)' },
   double: {
     title: 'Double',
     blurb: 'Type two words: one that goes before the prompt and one after it.',
@@ -37,14 +41,14 @@ const MODES: Record<ChallengeMode, { title: string; blurb: string; example: stri
   },
 }
 
-const REASONS: Record<Extract<AnswerOutcome, { ok: false }>['reason'], string> = {
+const REASONS: Record<AnswerReason, string> = {
   missing: 'Type a word in each box.',
   'not-one-word': 'One word per box, letters only.',
+  'not-a-word': 'That isn’t a word on its own. Single letters and word endings don’t count.',
   same: 'That’s the prompt word itself.',
   used: 'Already used in this run. Try another word.',
   'same-pair': 'Use two different words.',
   unknown: 'Not a word or phrase we can find (Wiktionary or Urban Dictionary).',
-  time: 'Time’s up!',
   error: 'Couldn’t reach the server. Try again.',
 }
 
@@ -58,35 +62,50 @@ export function ChallengeBoard({ playerId, playerName, bests, onBest, onAnnounce
   const beforeInput = useRef<HTMLInputElement>(null)
   const afterInput = useRef<HTMLInputElement>(null)
   const heading = useRef<HTMLHeadingElement>(null)
-  const warned = useRef(new Set<number>())
-  const finishing = useRef<string | null>(null)
+  const ending = useRef<string | null>(null)
+  const timingOut = useRef<string | null>(null)
 
   const game = phase.kind === 'running' ? phase.game : null
   const remaining = game ? Math.max(0, game.endsAt - now) : 0
 
   useEffect(() => {
     if (!game) return
-    const timer = window.setInterval(() => setNow(Date.now()), 200)
+    const timer = window.setInterval(() => setNow(Date.now()), 100)
     return () => window.clearInterval(timer)
   }, [game])
 
-  useEffect(() => {
-    if (!game) return
-    const seconds = Math.ceil(remaining / 1000)
-    for (const mark of [60, 10]) {
-      if (seconds <= mark && seconds > 0 && !warned.current.has(mark)) {
-        warned.current.add(mark)
-        onAnnounce(mark === 60 ? 'One minute left.' : 'Ten seconds left.')
-      }
-    }
-    if (remaining <= 0 && !busy) void finish(game)
-  })
-
-  const focusFirst = (_mode: ChallengeMode) => undefined
+  // Put the cursor in the first box whenever a new prompt appears.
   useEffect(() => {
     if (!game) return
     ;(game.mode === 'double' ? beforeInput : afterInput).current?.focus()
-  }, [game?.run, game?.prompt])
+  }, [game?.run, game?.prompt, game?.round])
+
+  // The bar ran out: move on to the next prompt automatically.
+  useEffect(() => {
+    if (!game || busy || remaining > 0) return
+    const key = `${game.run}:${game.round}`
+    if (timingOut.current === key) return
+    timingOut.current = key
+    void (async () => {
+      setBusy(true)
+      const next = await skipChallenge(playerId, game.run)
+      setBusy(false)
+      if (!next) { void end(game, game.score); return }
+      setFeedback({ ok: false, text: 'Time’s up! Next word.', key: Date.now() })
+      apply(game, next, null)
+    })()
+  })
+
+  /** Shows the next prompt from the server, or the results when the run is over. */
+  function apply(current: Running, next: RoundState, results: AnswerResult[] | null) {
+    const made = results ? [...current.made, results] : current.made
+    if (next.done) { void end({ ...current, made, score: next.score }, next.score); return }
+    setBefore('')
+    setAfter('')
+    setNow(Date.now())
+    setPhase({ kind: 'running', game: { ...current, made, prompt: next.prompt, round: next.round, score: next.score, endsAt: Date.now() + next.endsIn } })
+    onAnnounce(`Word ${next.round} of ${current.rounds}: ${next.prompt.toUpperCase()}.`)
+  }
 
   async function start(mode: ChallengeMode) {
     if (!playerId) return
@@ -96,27 +115,29 @@ export function ChallengeBoard({ playerId, playerName, bests, onBest, onAnnounce
       setPhase({ kind: 'choose', error: 'Couldn’t start a challenge. Check your connection and try again.' })
       return
     }
-    warned.current = new Set()
-    finishing.current = null
+    ending.current = null
+    timingOut.current = null
     setBefore('')
     setAfter('')
     setFeedback(null)
     setNow(Date.now())
-    setPhase({ kind: 'running', game: { mode, run: started.run, prompt: started.prompt, endsAt: Date.now() + started.endsIn, score: 0, made: [] } })
-    onAnnounce(`Go! Your first word is ${started.prompt.toUpperCase()}.`)
-    focusFirst(mode)
+    setPhase({
+      kind: 'running',
+      game: { mode, run: started.run, prompt: started.prompt, round: started.round, rounds: started.rounds, endsAt: Date.now() + started.endsIn, score: 0, made: [] },
+    })
+    onAnnounce(`Go! ${started.rounds} words, ${ROUND_SECONDS} seconds each. Your first word is ${started.prompt.toUpperCase()}.`)
   }
 
-  async function finish(current: Running) {
-    if (finishing.current === current.run) return
-    finishing.current = current.run
-    const newBest = current.score > bests[current.mode]
-    if (newBest) onBest(current.mode, current.score)
-    setPhase({ kind: 'over', mode: current.mode, score: current.score, made: current.made, result: 'pending', newBest })
-    onAnnounce(`Time’s up! You scored ${current.score} points.`)
+  async function end(current: Running, score: number) {
+    if (ending.current === current.run) return
+    ending.current = current.run
+    const newBest = score > bests[current.mode]
+    if (newBest) onBest(current.mode, score)
+    setPhase({ kind: 'over', mode: current.mode, run: current.run, score, made: current.made, result: 'pending', newBest })
+    onAnnounce(`Finished! You scored ${score} points.`)
     window.setTimeout(() => heading.current?.focus(), 0)
     const result = await finishChallenge(playerId, current.run)
-    setPhase(state => (state.kind === 'over' && state.made === current.made ? { ...state, result } : state))
+    setPhase(state => (state.kind === 'over' && state.run === current.run ? { ...state, result } : state))
   }
 
   async function submit(event: FormEvent) {
@@ -127,36 +148,33 @@ export function ChallengeBoard({ playerId, playerName, bests, onBest, onAnnounce
     setBusy(true)
     const outcome = await answerChallenge(playerId, game.run, game.mode === 'double' ? { before, after } : { after })
     setBusy(false)
-    if (!outcome.ok) {
-      if (outcome.reason === 'time') { void finish(game); return }
-      setFeedback({ ok: false, text: REASONS[outcome.reason], key: Date.now() })
-      const target = outcome.slot === 'before' ? beforeInput : afterInput
-      target.current?.select()
-      target.current?.focus()
-      if (outcome.endsIn !== undefined) setPhase({ kind: 'running', game: { ...game, endsAt: Date.now() + outcome.endsIn } })
+    if (outcome.ok) {
+      setFeedback({ ok: true, results: outcome.results, gained: outcome.gained, key: Date.now() })
+      onAnnounce(outcome.results.map(item => `${item.phrase}, ${item.points} points`).join('; '))
+      apply(game, outcome, outcome.results)
       return
     }
-    const next: Running = { ...game, prompt: outcome.prompt, score: outcome.score, endsAt: Date.now() + outcome.endsIn, made: [...game.made, outcome.results] }
-    setPhase({ kind: 'running', game: next })
-    setBefore('')
-    setAfter('')
-    setFeedback({ ok: true, results: outcome.results, gained: outcome.gained, key: Date.now() })
-    onAnnounce(`${outcome.results.map(item => `${item.phrase}, ${item.points} points`).join('; ')}. Next word: ${outcome.prompt.toUpperCase()}.`)
-    focusFirst(game.mode)
+    if (outcome.reason === 'time') {
+      timingOut.current = `${game.run}:${game.round}`
+      setFeedback({ ok: false, text: 'Too late for that word. Next word!', key: Date.now() })
+      apply(game, outcome, null)
+      return
+    }
+    setFeedback({ ok: false, text: REASONS[outcome.reason], key: Date.now() })
+    const target = outcome.slot === 'before' ? beforeInput : afterInput
+    target.current?.select()
+    target.current?.focus()
   }
 
   async function skip() {
     if (!game || busy) return
+    timingOut.current = `${game.run}:${game.round}`
     setBusy(true)
-    const skipped = await skipChallenge(playerId, game.run)
+    const next = await skipChallenge(playerId, game.run)
     setBusy(false)
-    if (!skipped) return
-    setPhase({ kind: 'running', game: { ...game, prompt: skipped.prompt, endsAt: Date.now() + skipped.endsIn } })
-    setBefore('')
-    setAfter('')
-    setFeedback({ ok: false, text: `Skipped (−${SKIP_PENALTY_SECONDS} seconds).`, key: Date.now() })
-    onAnnounce(`Skipped. New word: ${skipped.prompt.toUpperCase()}.`)
-    focusFirst(game.mode)
+    if (!next) return
+    setFeedback({ ok: false, text: 'Skipped.', key: Date.now() })
+    apply(game, next, null)
   }
 
   if (!ONLINE) {
@@ -168,11 +186,11 @@ export function ChallengeBoard({ playerId, playerName, bests, onBest, onAnnounce
       <section className="challenge" aria-labelledby="challenge-title">
         <div className="challenge__intro">
           <TimerIcon className="challenge__badge" width="34" height="34" />
-          <h2 id="challenge-title" className="challenge__title">Five-minute challenge</h2>
+          <h2 id="challenge-title" className="challenge__title">Word challenge</h2>
           <p>
-            Make as many words and phrases as you can with the prompt word, joined (<em>sunflower</em>) or spaced
-            (<em>forest fire</em>). Rare answers score more: <strong>10</strong> for the obvious one, up to <strong>100</strong> for
-            something nobody else thinks of.
+            {ROUNDS} prompt words, {ROUND_SECONDS} seconds each. Make a word or phrase with each one, joined
+            (<em>sunflower</em>) or spaced (<em>forest fire</em>). Rare answers score more: <strong>10</strong> for the
+            obvious one, up to <strong>100</strong> for something nobody else thinks of.
           </p>
           <div className="challenge__modes">
             {(['single', 'double'] as const).map(mode => (
@@ -181,19 +199,16 @@ export function ChallengeBoard({ playerId, playerName, bests, onBest, onAnnounce
                 <p>{MODES[mode].blurb}</p>
                 <p className="challenge__example">{MODES[mode].example}</p>
                 {bests[mode] > 0 && <p className="challenge__best">Your best: <strong>{bests[mode]}</strong></p>}
-                <button
-                  type="button" className="btn btn--primary" onClick={() => void start(mode)}
-                  disabled={phase.kind === 'starting' || !playerId}
-                >
+                <button type="button" className="btn btn--primary" onClick={() => void start(mode)} disabled={phase.kind === 'starting' || !playerId}>
                   {phase.kind === 'starting' && phase.mode === mode ? 'Starting…' : `Play ${MODES[mode].title}`}
                 </button>
               </div>
             ))}
           </div>
           <ul className="challenge__rules">
-            <li>Each word can be used once per run. Stuck? Skip for {SKIP_PENALTY_SECONDS} seconds.</li>
+            <li>Answers must be real words on their own: no single letters or word endings.</li>
+            <li>When the bar runs out, the next word appears. Each word can be used once per run.</li>
             <li>Words are checked against Wiktionary, plus Urban Dictionary for newer slang.</li>
-            <li>Rarity comes from how common a phrase is and how few other players give it.</li>
           </ul>
           {phase.kind === 'choose' && phase.error && <p className="challenge__error" role="alert">{phase.error}</p>}
         </div>
@@ -205,7 +220,7 @@ export function ChallengeBoard({ playerId, playerName, bests, onBest, onAnnounce
     const result = phase.result
     return (
       <section className="challenge result" aria-labelledby="challenge-over">
-        <h2 id="challenge-over" className="result__title" tabIndex={-1} ref={heading}>Time’s up!</h2>
+        <h2 id="challenge-over" className="result__title" tabIndex={-1} ref={heading}>Finished!</h2>
         <p className="challenge__score-big">{phase.score}</p>
         <p className="result__summary">
           points · {MODES[phase.mode].title}{phase.newBest ? ' · new personal best!' : bests[phase.mode] > 0 ? ` · best ${bests[phase.mode]}` : ''}
@@ -229,16 +244,22 @@ export function ChallengeBoard({ playerId, playerName, bests, onBest, onAnnounce
 
   const current = phase.game
   const prompt = current.prompt.toUpperCase()
+  const fraction = remaining / ROUND_MS
+  const level = fraction > 0.5 ? 'plenty' : fraction > 0.25 ? 'half' : 'low'
   return (
     <section className="challenge" aria-label={`${MODES[current.mode].title} challenge in progress`}>
       <div className="challenge__bar">
-        <span className={`challenge__clock${remaining < 30_000 ? ' challenge__clock--low' : ''}`} aria-label={`${formatClock(remaining)} left`}>
-          <TimerIcon width="18" height="18" /> {formatClock(remaining)}
-        </span>
+        <span className="challenge__round">Word <strong>{current.round}</strong> of {current.rounds}</span>
         <span className="challenge__mode-tag">{MODES[current.mode].title}</span>
         <span className="challenge__score" aria-label={`Score ${current.score}`}>{current.score} <small>pts</small></span>
       </div>
-      <div className="challenge__time" aria-hidden="true"><span style={{ width: `${(remaining / (CHALLENGE_SECONDS * 1000)) * 100}%` }} /></div>
+      <div
+        className={`challenge__time challenge__time--${level}`} role="progressbar" aria-label="Time left for this word"
+        aria-valuemin={0} aria-valuemax={ROUND_SECONDS} aria-valuenow={Math.ceil(remaining / 1000)}
+        aria-valuetext={`${Math.ceil(remaining / 1000)} seconds left`}
+      >
+        <span style={{ width: `${fraction * 100}%` }} />
+      </div>
 
       <form className={`challenge__play challenge__play--${current.mode}`} onSubmit={submit} noValidate>
         {current.mode === 'double' && (
@@ -254,7 +275,7 @@ export function ChallengeBoard({ playerId, playerName, bests, onBest, onAnnounce
             />
           </>
         )}
-        <span key={current.prompt} className="challenge__word">{prompt}</span>
+        <span key={`${current.round}-${current.prompt}`} className="challenge__word">{prompt}</span>
         <label className="sr-only" htmlFor="challenge-after">Word that goes after {prompt}</label>
         <input
           ref={afterInput} id="challenge-after" className="challenge__input" value={after} placeholder={`${current.prompt} ___`}
@@ -276,8 +297,8 @@ export function ChallengeBoard({ playerId, playerName, bests, onBest, onAnnounce
       </div>
 
       <div className="challenge__actions">
-        <button type="button" className="btn btn--quiet btn--small" onClick={() => void skip()} disabled={busy}>Skip word (−{SKIP_PENALTY_SECONDS}s)</button>
-        <button type="button" className="link-button" onClick={() => void finish(current)}>End run</button>
+        <button type="button" className="btn btn--quiet btn--small" onClick={() => void skip()} disabled={busy}>Skip word</button>
+        <button type="button" className="link-button" onClick={() => void end(current, current.score)}>End run</button>
       </div>
 
       {current.made.length > 0 && <Made made={current.made.slice(-5).reverse()} live />}
