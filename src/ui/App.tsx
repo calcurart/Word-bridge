@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { PUZZLE_BY_ID, PUZZLES } from '../data/puzzles.ts'
 import { fetchCommunityLinks } from '../lib/community.ts'
 import { gameStatus, hasProgress, newGame, recheckLatest } from '../lib/game.ts'
@@ -7,17 +7,20 @@ import { buildGraph, dictionarySources } from '../lib/graph.ts'
 import { pickPractice, rememberPractice } from '../lib/practice.ts'
 import { dailyForDay, formatCountdown, timeUntilNextDay, utcDay } from '../lib/schedule.ts'
 import { dailyStats } from '../lib/stats.ts'
-import { loadSave, resetSave, withDaily, writeSave } from '../lib/storage.ts'
+import { gameKey, loadSave, randomId, resetSave, withDaily, writeSave } from '../lib/storage.ts'
+import { ONLINE, reportGame } from '../lib/online.ts'
 import type { Save, Theme } from '../lib/storage.ts'
 import { Dialog } from './Dialog.tsx'
+import { ChallengeBoard } from './ChallengeBoard.tsx'
 import { GameBoard } from './GameBoard.tsx'
+import { LeaderboardPanel, LeaderboardSettings } from './Leaderboard.tsx'
 import { useNow } from './hooks.ts'
-import { BridgeMark, CloseIcon, HelpIcon, InfoIcon, SettingsIcon, StatsIcon } from './icons.tsx'
+import { BridgeMark, CloseIcon, HelpIcon, InfoIcon, SettingsIcon, StatsIcon, TrophyIcon } from './icons.tsx'
 import { SettingsPanel, StatsPanel, SuggestPanel } from './panels.tsx'
 import { Tutorial } from './Tutorial.tsx'
 
-type Mode = 'daily' | 'practice'
-type DialogName = 'help' | 'stats' | 'settings'
+type Mode = 'daily' | 'practice' | 'challenge'
+type DialogName = 'help' | 'stats' | 'settings' | 'leaderboard'
 type StorageIssue = 'unavailable' | 'recovered' | 'write-failed'
 
 const STORAGE_MESSAGES: Record<StorageIssue, string> = {
@@ -29,7 +32,7 @@ const STORAGE_MESSAGES: Record<StorageIssue, string> = {
 function newPractice(save: Save, today: number): Save {
   const avoid = new Set([dailyForDay(today).puzzleId, ...(save.practice ? [save.practice.puzzleId] : [])])
   const puzzle = pickPractice(PUZZLES, avoid, save.recentPractice)
-  return { ...save, practice: newGame(puzzle), recentPractice: rememberPractice(save.recentPractice, puzzle.id) }
+  return { ...save, practice: { ...newGame(puzzle), gameId: randomId('practice-') }, recentPractice: rememberPractice(save.recentPractice, puzzle.id) }
 }
 
 export function App() {
@@ -55,6 +58,44 @@ export function App() {
     })
     return () => { active = false }
   }, [])
+
+  // Anonymous leaderboard ID, created once and kept in this browser.
+  useEffect(() => {
+    if (!save.playerId) setSave(current => (current.playerId ? current : { ...current, playerId: randomId() }))
+  }, [save.playerId])
+
+  // Count every finished daily and practice game once on the global leaderboard. Unsent games are retried
+  // whenever the save changes (e.g. on the next visit), and the server ignores repeats.
+  const sending = useRef(new Set<string>())
+  useEffect(() => {
+    if (!ONLINE || !save.playerId) return
+    const finished: { key: string; mode: 'daily' | 'practice'; record: GameRecord }[] = []
+    for (const [day, record] of Object.entries(save.daily)) {
+      const key = gameKey('daily', record, Number(day))
+      if (key && gameStatus(record) !== 'playing') finished.push({ key, mode: 'daily', record })
+    }
+    if (save.practice && gameStatus(save.practice) !== 'playing') {
+      const key = gameKey('practice', save.practice)
+      if (key) finished.push({ key, mode: 'practice', record: save.practice })
+    }
+    const reported = new Set(save.reported)
+    for (const game of finished) {
+      if (reported.has(game.key) || sending.current.has(game.key)) continue
+      sending.current.add(game.key)
+      reportGame({
+        player: save.playerId,
+        ...(save.playerName ? { name: save.playerName } : {}),
+        gameId: game.key,
+        mode: game.mode,
+        won: gameStatus(game.record) === 'won',
+        checks: game.record.attempts.length,
+        hints: game.record.hints.length,
+      }).then(ok => {
+        sending.current.delete(game.key)
+        if (ok) setSave(current => (current.reported.includes(game.key) ? current : { ...current, reported: [...current.reported, game.key].slice(-1000) }))
+      })
+    }
+  }, [save.daily, save.practice, save.playerId, save.playerName, save.reported])
 
   const announce = useCallback((text: string) => {
     // Appending an invisible character lets the same sentence be announced twice in a row.
@@ -136,6 +177,7 @@ export function App() {
   }
 
   const showingDaily = mode === 'daily'
+  const showingChallenge = mode === 'challenge'
   const puzzle = showingDaily ? dailyPuzzle : practicePuzzle
   const record = showingDaily ? dailyRecord : practiceRecord
   const olderDaily = showingDaily && assignment.day !== dailyForDay(today).day
@@ -164,13 +206,15 @@ export function App() {
           <h1 className="wordmark"><BridgeMark /><span>Word Bridge</span></h1>
           <nav className="masthead__tools" aria-label="Game menu">
             <button type="button" className="icon-button" onClick={() => setDialog('help')} aria-label="How to play"><HelpIcon /></button>
+            {ONLINE && <button type="button" className="icon-button" onClick={() => setDialog('leaderboard')} aria-label="Leaderboard"><TrophyIcon /></button>}
             <button type="button" className="icon-button" onClick={() => setDialog('stats')} aria-label="Statistics"><StatsIcon /></button>
             <button type="button" className="icon-button" onClick={() => setDialog('settings')} aria-label="Settings"><SettingsIcon /></button>
           </nav>
         </div>
         <div className="segmented" role="group" aria-label="Game mode">
           <button type="button" className="segmented__button" aria-pressed={showingDaily} onClick={() => setMode('daily')}>Daily</button>
-          <button type="button" className="segmented__button" aria-pressed={!showingDaily} onClick={openPractice}>Practice</button>
+          <button type="button" className="segmented__button" aria-pressed={mode === 'practice'} onClick={openPractice}>Practice</button>
+          <button type="button" className="segmented__button" aria-pressed={showingChallenge} onClick={() => setMode('challenge')}>Challenge</button>
         </div>
       </header>
 
@@ -190,7 +234,17 @@ export function App() {
       )}
 
       <main id="puzzle" className="main" tabIndex={-1}>
-        {puzzle && record ? (
+        {showingChallenge ? (
+          <ChallengeBoard
+            graph={graph}
+            playerId={save.playerId}
+            playerName={save.playerName}
+            best={save.challengeBest}
+            onBest={score => setSave(current => ({ ...current, challengeBest: Math.max(current.challengeBest, score) }))}
+            onAnnounce={announce}
+            onLeaderboard={() => setDialog('leaderboard')}
+          />
+        ) : puzzle && record ? (
           <>
             <div className="meta">
               <h2 className="meta__title">
@@ -248,7 +302,18 @@ export function App() {
             setDialog(null)
             announce('All saved data was deleted.')
           }}
-        />
+        >
+          <LeaderboardSettings
+            playerId={save.playerId}
+            name={save.playerName}
+            visible={save.showOnLeaderboard}
+            onName={name => setSave(current => ({ ...current, playerName: name }))}
+            onVisible={visible => setSave(current => ({ ...current, showOnLeaderboard: visible }))}
+          />
+        </SettingsPanel>
+      </Dialog>
+      <Dialog open={dialog === 'leaderboard'} title="Leaderboard" onClose={closeDialog}>
+        <LeaderboardPanel playerId={save.playerId} onSettings={() => setDialog('settings')} />
       </Dialog>
       <Dialog open={suggestion !== null} title="Suggest a phrase" onClose={() => setSuggestion(null)}>
         {suggestion && <SuggestPanel from={suggestion.from} to={suggestion.to} onAdded={addPhrase} />}

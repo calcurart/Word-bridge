@@ -3,12 +3,16 @@ import type { Puzzle } from '../data/puzzles.ts'
 import { canonicalWord, GRAPH, isSingleWord, normalizeEntry } from './graph.ts'
 import { gameStatus, MAX_CHECKS, MAX_ENTRY_LENGTH, maxHints } from './game.ts'
 import type { Attempt, GameRecord, Hint, LinkFeedback } from './game.ts'
+import { GAME_ID, PLAYER_ID } from './ids.ts'
 import { dailyForDay, FIRST_DAY } from './schedule.ts'
+
+export { GAME_ID, PLAYER_ID }
 
 export const STORAGE_KEY = 'wordbridge.save'
 export const BACKUP_KEY = 'wordbridge.save.unreadable'
 const VERSION = 1
 export const PRACTICE_MEMORY = 30
+const REPORTED_MEMORY = 1000
 
 export type Theme = 'system' | 'light' | 'dark'
 
@@ -22,13 +26,24 @@ export type Save = {
   readonly practice: GameRecord | null
   /** Recently played practice puzzle IDs, oldest first. */
   readonly recentPractice: readonly string[]
+  /** Anonymous random ID for the global leaderboard ('' until first needed). */
+  readonly playerId: string
+  /** Display name chosen for the leaderboard; null means the default "Bridge Builder" name. */
+  readonly playerName: string | null
+  readonly showOnLeaderboard: boolean
+  /** IDs of finished games already counted on the server, newest last. */
+  readonly reported: readonly string[]
+  readonly challengeBest: number
 }
 
 export type StorageAccess = Pick<Storage, 'getItem' | 'setItem'>
 export type LoadStatus = 'ok' | 'recovered' | 'unavailable'
 
 export function freshSave(): Save {
-  return { version: VERSION, theme: 'system', tutorialSeen: false, daily: {}, practice: null, recentPractice: [] }
+  return {
+    version: VERSION, theme: 'system', tutorialSeen: false, daily: {}, practice: null, recentPractice: [],
+    playerId: '', playerName: null, showOnLeaderboard: true, reported: [], challengeBest: 0,
+  }
 }
 
 function asRecord(value: unknown): Record<string, unknown> | undefined {
@@ -78,7 +93,8 @@ export function validateRecord(value: unknown, puzzle: Puzzle): GameRecord | und
       ? [...feedback]
       : Array.from({ length: links }, () => null)
 
-  return { puzzleId: puzzle.id, entries: [...entries] as string[], hints: validHints, attempts: validAttempts, feedback: validFeedback }
+  const record: GameRecord = { puzzleId: puzzle.id, entries: [...entries] as string[], hints: validHints, attempts: validAttempts, feedback: validFeedback }
+  return typeof raw.gameId === 'string' && GAME_ID.test(raw.gameId) ? { ...record, gameId: raw.gameId } : record
 }
 
 /** Decodes saved data. Unreadable or unknown-version data yields a fresh save; invalid individual games are dropped. */
@@ -114,6 +130,11 @@ export function decodeSave(raw: string | null): { save: Save; recovered: boolean
         daily,
         practice,
         recentPractice: recentPractice.slice(-PRACTICE_MEMORY),
+        playerId: typeof value.playerId === 'string' && PLAYER_ID.test(value.playerId) ? value.playerId : '',
+        playerName: typeof value.playerName === 'string' && value.playerName.trim().length >= 2 && value.playerName.length <= 20 ? value.playerName : null,
+        showOnLeaderboard: value.showOnLeaderboard !== false,
+        reported: (Array.isArray(value.reported) ? value.reported : []).filter((id): id is string => typeof id === 'string' && GAME_ID.test(id)).slice(-REPORTED_MEMORY),
+        challengeBest: Number.isSafeInteger(value.challengeBest) && (value.challengeBest as number) > 0 ? value.challengeBest as number : 0,
       },
       recovered: false,
     }
@@ -156,7 +177,21 @@ export function withDaily(save: Save, day: number, record: GameRecord): Save {
   return { ...save, daily: { ...save.daily, [String(day)]: record } }
 }
 
-/** Resets progress but keeps the theme, and does not show the tutorial again. */
+/** Resets progress but keeps the theme and leaderboard identity, and does not show the tutorial again. */
 export function resetSave(save: Save): Save {
-  return { ...freshSave(), theme: save.theme, tutorialSeen: true }
+  return {
+    ...freshSave(), theme: save.theme, tutorialSeen: true,
+    playerId: save.playerId, playerName: save.playerName, showOnLeaderboard: save.showOnLeaderboard, reported: save.reported,
+  }
+}
+
+/** The leaderboard ID of a finished game: one per daily date, or the practice game's random ID. */
+export function gameKey(mode: 'daily' | 'practice', record: GameRecord, day?: number): string | null {
+  if (mode === 'daily') return day === undefined ? null : `daily-${day}`
+  return record.gameId ?? null
+}
+
+export function randomId(prefix = ''): string {
+  const bytes = crypto.getRandomValues(new Uint8Array(12))
+  return prefix + [...bytes].map(byte => byte.toString(16).padStart(2, '0')).join('')
 }

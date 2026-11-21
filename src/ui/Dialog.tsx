@@ -17,6 +17,9 @@ type Props = {
 export function Dialog({ open, title, onClose, children, className }: Props) {
   const ref = useRef<HTMLDialogElement>(null)
   const opener = useRef<HTMLElement | null>(null)
+  // True while the parent is closing the dialog (e.g. switching to another dialog), so that close
+  // isn't reported back as the player dismissing it.
+  const closingFromProp = useRef(false)
   const titleId = useId()
 
   useEffect(() => {
@@ -26,6 +29,7 @@ export function Dialog({ open, title, onClose, children, className }: Props) {
       opener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
       dialog.showModal()
     } else if (!open && dialog.open) {
+      closingFromProp.current = true
       dialog.close()
     }
   }, [open])
@@ -36,6 +40,10 @@ export function Dialog({ open, title, onClose, children, className }: Props) {
       className={`dialog ${className ?? ''}`}
       aria-labelledby={titleId}
       onClose={() => {
+        if (closingFromProp.current) {
+          closingFromProp.current = false
+          return
+        }
         onClose()
         // Return focus to the opener; for the first-visit tutorial (no opener), go to the puzzle.
         const target = opener.current?.isConnected ? opener.current : document.getElementById('puzzle')

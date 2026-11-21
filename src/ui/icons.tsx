@@ -53,3 +53,9 @@ export const CopyIcon = (props: IconProps) => (
 export const InfoIcon = (props: IconProps) => (
   <Icon {...props}><circle cx="12" cy="12" r="9" /><path d="M12 11v6M12 7.5h.01" /></Icon>
 )
+export const TrophyIcon = (props: IconProps) => (
+  <Icon {...props}><path d="M8 4h8v5a4 4 0 0 1-8 0z" /><path d="M8 6H5a3 3 0 0 0 3 4M16 6h3a3 3 0 0 1-3 4" /><path d="M12 13v4M8.5 20h7M10 17h4v3h-4z" /></Icon>
+)
+export const TimerIcon = (props: IconProps) => (
+  <Icon {...props}><circle cx="12" cy="13" r="8" /><path d="M12 9v4l2.5 2M10 2h4" /></Icon>
+)

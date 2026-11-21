@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import type { ReactNode } from 'react'
 import { COMMUNITY_API, suggestLink } from '../lib/community.ts'
 import type { SuggestResult, SuggestStatus } from '../lib/community.ts'
 import type { DailyStats } from '../lib/stats.ts'
@@ -41,7 +42,8 @@ export function StatsPanel({ stats, nextDaily, highlight }: { stats: DailyStats;
   )
 }
 
-export function SettingsPanel({ theme, onTheme, onTutorial, onReset }: {
+export function SettingsPanel({ theme, onTheme, onTutorial, onReset, children }: {
+  children?: ReactNode
   theme: Theme
   onTheme: (theme: Theme) => void
   onTutorial: () => void
@@ -66,6 +68,8 @@ export function SettingsPanel({ theme, onTheme, onTutorial, onReset }: {
           ))}
         </div>
       </fieldset>
+
+      {children}
 
       <section className="settings__group">
         <h3 className="dialog__subtitle">How to play</h3>

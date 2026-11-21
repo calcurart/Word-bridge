@@ -21,6 +21,8 @@ export type GameRecord = {
   readonly attempts: readonly Attempt[]
   /** One entry per link (gaps + 1), describing the words currently on screen. */
   readonly feedback: readonly LinkFeedback[]
+  /** Practice games get a random ID so a finished game is counted on the leaderboard only once. */
+  readonly gameId?: string
 }
 
 export type Status = 'playing' | 'won' | 'lost'

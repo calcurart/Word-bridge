@@ -208,6 +208,31 @@ If `ALLOWED_ORIGINS` in `wrangler.jsonc` doesn't include the site's address, sug
 `VITE_COMMUNITY_API` the game works as before and the Suggest dialog only offers a copyable suggestion. No secrets are
 involved: the Worker address is public.
 
+## Challenge mode
+
+A third mode next to Daily and Practice. The player gets a word (e.g. FOREST) and has five minutes to type as
+many words as possible that make a familiar word or phrase with it, **before or after** it: RAIN (rainforest) or
+FIRE (forest fire). Each correct answer scores a point and usually becomes the next word (a chain), unless it has
+fewer than two unused connections, in which case a fresh well-connected word is shown. A word can be used once per
+run; **Skip** gives a new word for 10 seconds. Rules live in `src/lib/challenge.ts`, shared with the server.
+
+## Global leaderboard
+
+Players are anonymous: the browser keeps a random player ID and a display name (default "Bridge Builder XXXX",
+changeable in Settings, with an option to hide from the leaderboard). The phrase service (`worker/src/scores.ts`)
+also:
+
+- **counts every finished Daily and Practice game once** (`POST /games`, keyed by player + game: `daily-<day>` or a
+  random practice ID). Games that couldn't be sent are retried on the next visit; repeats are ignored.
+- **scores challenge runs on the server**: `/challenge/start` starts a server-side clock; `/challenge/finish` must
+  arrive within five minutes (plus 20 s grace) and every answer is re-checked against the same dictionary
+  (built-in + verified suggestions) with the same rules, so made-up or repeated answers score nothing.
+- serves `GET /leaderboard`: worldwide totals, best challenge scores today and all time, and most bridges completed.
+
+Names are checked for length and offensive words. Rate limits: 120 game reports and 30 challenge runs per hour per
+address. Answers ship with the page and anyone could script a fast run, so this is a casual leaderboard, not a
+cheat-proof one. To remove a player: `npx wrangler@4 d1 execute word-bridge --remote --command "UPDATE players SET hidden = 1 WHERE name = '…'"`.
+
 ## The curated dictionary's limits
 
 The game knows **651 built-in links between 414 words**, plus any community phrases, and ships **69 puzzles**

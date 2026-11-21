@@ -6,24 +6,13 @@
 // A suggestion is looked up in Wiktionary. If FIRST+SECOND is a real, suitable English word or phrase it is
 // stored and served to every player. No accounts, no secrets: IP addresses are only kept as salted hashes
 // for rate limiting, and suggestion records are deleted after 30 days.
+//
+// It also counts finished games and runs the leaderboard and challenge scoring: see scores.ts.
+import { finishRun, leaderboard, reportGame, startRun, updatePlayer } from './scores.ts'
+import type { Context } from './scores.ts'
+import type { Env } from './types.ts'
 import { judge, parsePages, WORD, wiktionaryUrl } from './verify.ts'
 import type { Verdict } from './verify.ts'
-
-// Minimal D1 typing, so the Worker needs no extra type packages.
-interface D1Result<T> { results: T[] }
-interface D1Statement {
-  bind(...values: unknown[]): D1Statement
-  first<T>(): Promise<T | null>
-  all<T>(): Promise<D1Result<T>>
-  run(): Promise<unknown>
-}
-interface D1Database { prepare(sql: string): D1Statement }
-
-interface Env {
-  DB: D1Database
-  /** Comma-separated origins allowed to send suggestions, e.g. "https://example.github.io". */
-  ALLOWED_ORIGINS: string
-}
 
 const HOUR = 3_600_000
 const DAY = 24 * HOUR
@@ -62,6 +51,24 @@ export default {
       if (url.pathname === '/suggest' && request.method === 'POST') {
         if (!allowed.includes(origin)) return json({ status: 'invalid' }, 403, cors)
         return await suggest(request, env, cors)
+      }
+      const scoreRoutes: Record<string, (ctx: Context) => Promise<Response>> = {
+        'POST /games': ctx => reportGame(request, ctx),
+        'POST /challenge/start': ctx => startRun(request, ctx),
+        'POST /challenge/finish': ctx => finishRun(request, ctx),
+        'POST /player': ctx => updatePlayer(request, ctx),
+        'GET /leaderboard': ctx => leaderboard(url, ctx),
+      }
+      const handler = scoreRoutes[`${request.method} ${url.pathname}`]
+      if (handler) {
+        if (!allowed.includes(origin)) return json({ status: 'invalid' }, 403, cors)
+        const ctx: Context = {
+          db: env.DB,
+          now: Date.now(),
+          ipHash: await hashIp(env, request.headers.get('CF-Connecting-IP') ?? 'unknown'),
+          json: (body, status = 200) => json(body, status, { ...cors, 'Cache-Control': 'no-store' }),
+        }
+        return await handler(ctx)
       }
       if (url.pathname === '/' && request.method === 'GET') {
         return new Response('Word Bridge phrase service. See /links.\n', { headers: { 'Content-Type': 'text/plain; charset=utf-8' } })
