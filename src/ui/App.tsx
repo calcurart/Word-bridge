@@ -11,11 +11,12 @@ import { gameKey, loadSave, randomId, resetSave, withDaily, writeSave } from '..
 import { ONLINE, reportGame } from '../lib/online.ts'
 import type { Save, Theme } from '../lib/storage.ts'
 import { Dialog } from './Dialog.tsx'
+import { HeroScene } from './HeroScene.tsx'
 import { ChallengeBoard } from './ChallengeBoard.tsx'
 import { GameBoard } from './GameBoard.tsx'
 import { LeaderboardPanel, LeaderboardSettings } from './Leaderboard.tsx'
 import { useNow } from './hooks.ts'
-import { BridgeMark, CloseIcon, HelpIcon, InfoIcon, SettingsIcon, StatsIcon, TrophyIcon } from './icons.tsx'
+import { CloseIcon, HelpIcon, InfoIcon, SettingsIcon, StatsIcon, TrophyIcon } from './icons.tsx'
 import { SettingsPanel, StatsPanel, SuggestPanel } from './panels.tsx'
 import { Tutorial } from './Tutorial.tsx'
 
@@ -202,15 +203,20 @@ export function App() {
     <div className="app">
       <a className="skip-link" href="#puzzle">Skip to puzzle</a>
       <header className="masthead">
-        <div className="masthead__bar">
-          <h1 className="wordmark"><BridgeMark /><span>Word Bridge</span></h1>
-          <nav className="masthead__tools" aria-label="Game menu">
-            <button type="button" className="icon-button" onClick={() => setDialog('help')} aria-label="How to play"><HelpIcon /></button>
-            {ONLINE && <button type="button" className="icon-button" onClick={() => setDialog('leaderboard')} aria-label="Leaderboard"><TrophyIcon /></button>}
-            <button type="button" className="icon-button" onClick={() => setDialog('stats')} aria-label="Statistics"><StatsIcon /></button>
-            <button type="button" className="icon-button" onClick={() => setDialog('settings')} aria-label="Settings"><SettingsIcon /></button>
-          </nav>
-        </div>
+        <HeroScene>
+          <div className="masthead__bar">
+            <h1 className="wordmark">
+              <span className="wordmark__line">Word</span> <span className="wordmark__line">Bridge</span>
+            </h1>
+            <nav className="masthead__tools" aria-label="Game menu">
+              <button type="button" className="icon-button" onClick={() => setDialog('help')} aria-label="How to play"><HelpIcon /></button>
+              {ONLINE && <button type="button" className="icon-button" onClick={() => setDialog('leaderboard')} aria-label="Leaderboard"><TrophyIcon /></button>}
+              <button type="button" className="icon-button" onClick={() => setDialog('stats')} aria-label="Statistics"><StatsIcon /></button>
+              <button type="button" className="icon-button" onClick={() => setDialog('settings')} aria-label="Settings"><SettingsIcon /></button>
+            </nav>
+          </div>
+          <p className="hero__tagline">How far can you go?</p>
+        </HeroScene>
         <div className="segmented" role="group" aria-label="Game mode">
           <button type="button" className="segmented__button" aria-pressed={showingDaily} onClick={() => setMode('daily')}>Daily</button>
           <button type="button" className="segmented__button" aria-pressed={mode === 'practice'} onClick={openPractice}>Practice</button>

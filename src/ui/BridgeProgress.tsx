@@ -1,18 +1,22 @@
 import { useEffect, useRef, useState } from 'react'
-import type { CSSProperties } from 'react'
+import type { CSSProperties, ReactNode } from 'react'
 import { carProgress } from '../lib/game.ts'
 import type { LinkFeedback } from '../lib/game.ts'
+import { Dino, DINO_SIZE } from './pixel/Pixel.tsx'
 
 // These match the fixed heights of a word tile and a link in styles.css (.tile, .link), so each stop
 // on the track lines up with the middle of its word.
 const TILE = 60
 const LINK = 58
 const STEP = TILE + LINK
-const WIDTH = 36
+const WIDTH = 44
 const MID = WIDTH / 2
-const CAR_W = 20
-const CAR_H = 32
-const STEP_SECONDS = 0.5
+const SCALE = 1.5
+const DINO_W = DINO_SIZE.width * SCALE
+const DINO_H = DINO_SIZE.height * SCALE
+const STEP_SECONDS = 0.55
+const ISLAND = 40 // height of each word's island
+const LAND_W = 26 // width of the land between islands
 
 type Props = {
   feedback: readonly LinkFeedback[]
@@ -20,9 +24,10 @@ type Props = {
 }
 
 /**
- * A bridge seen from above, running down the side of the word tiles. The car drives down over each
- * recognized link from the start word, stops in front of an unrecognized one, and backs up as soon as
- * a change makes a crossed link unchecked or wrong. Decorative: the links already say the same in text.
+ * The land bridge seen from above, running down the side of the word tiles: an island for every word and
+ * a strip of land that rises out of the sea for every recognized link. Dash runs down over each recognized
+ * link from the start word, stops at the shore in front of an unrecognized one, and backs up as soon as a
+ * change makes a crossed link unchecked or wrong. Decorative: the links already say the same in text.
  */
 export function BridgeProgress({ feedback, won }: Props) {
   const links = feedback.length
@@ -42,74 +47,117 @@ export function BridgeProgress({ feedback, won }: Props) {
     return () => window.clearTimeout(timer)
   }, [progress])
 
-  const carStyle = {
-    transform: `translate(${MID - CAR_W / 2}px, ${stop(progress) - CAR_H / 2}px)`,
+  const runnerStyle = {
+    transform: `translate(${MID - DINO_W / 2}px, ${stop(progress) - DINO_H + 8}px)`,
     '--travel': `${(motion?.steps ?? 1) * STEP_SECONDS}s`,
   } as CSSProperties
-  const carClass = ['track__car', motion && `track__car--${motion.direction}`, blocked && !motion && 'track__car--stuck']
+  const runnerClass = ['track__runner', motion && `track__runner--${motion.direction}`, blocked && !motion && 'track__runner--stuck']
     .filter(Boolean).join(' ')
+  const pose = won && !motion ? 'cheer' : motion ? 'run' : 'stand'
+
+  const islands: ReactNode[] = []
+  for (let word = 0; word <= links; word++) {
+    const y = stop(word) - ISLAND / 2
+    islands.push(<Island key={word} y={y} goal={word === links} />)
+  }
 
   return (
     <svg
       className={`track${won ? ' track--won' : ''}`} width={WIDTH} height={height}
-      viewBox={`0 0 ${WIDTH} ${height}`} aria-hidden="true" focusable="false"
+      viewBox={`0 0 ${WIDTH} ${height}`} shapeRendering="crispEdges" aria-hidden="true" focusable="false"
     >
-      <rect className="track__water" x="2" y="0" width={WIDTH - 4} height={height} rx="10" />
-      <path className="track__ripples" d={ripples(height)} />
-      <rect className="track__bank" x="0" y="0" width={WIDTH} height={TILE * 0.8} rx="9" />
-      <rect className="track__bank" x="0" y={height - TILE * 0.8} width={WIDTH} height={TILE * 0.8} rx="9" />
-      <path className="track__finish" d={finishLine(height - TILE * 0.8 + 2)} />
+      <rect className="track__sea" x="2" y="0" width={WIDTH - 4} height={height} />
+      <path className="track__foam" d={foam(height)} />
 
       {feedback.map((state, index) => {
-        const top = stop(index)
-        const bottom = stop(index + 1)
+        const top = stop(index) + ISLAND / 2 - 2
+        const bottom = stop(index + 1) - ISLAND / 2 + 2
         const kind = state === true ? 'good' : state === false ? 'bad' : 'open'
-        const third = (bottom - top) * 0.34
-        const pieces = kind === 'bad' ? [[top, top + third], [bottom - third, bottom]] : [[top, bottom]]
+        const x = MID - LAND_W / 2
+        if (kind === 'open') {
+          return <rect key={index} className="track__plot" x={x + 1} y={top + 3} width={LAND_W - 2} height={bottom - top - 6} />
+        }
+        if (kind === 'bad') {
+          const stub = Math.round((bottom - top) * 0.3)
+          return (
+            <g key={index} className="track__span track__span--bad">
+              <LandStrip x={x} y={top} width={LAND_W} height={stub} crumbled="bottom" />
+              <LandStrip x={x} y={bottom - stub} width={LAND_W} height={stub} crumbled="top" />
+              <path className="track__break" d={`M${MID - 5} ${(top + bottom) / 2 - 5}h2v2h2v2h2v-2h2v-2h2v2h-2v2h-2v2h2v2h2v2h-2v-2h-2v-2h-2v2h-2v2h-2v-2h2v-2h2v-2h-2v-2h-2z`} />
+            </g>
+          )
+        }
         return (
-          <g key={index} className={`track__span track__span--${kind}`} style={{ '--i': index } as CSSProperties}>
-            {pieces.map(([y1, y2], piece) => (
-              <g key={piece}>
-                <line className="track__planks" x1={MID} y1={y1} x2={MID} y2={y2} />
-                <line className="track__rail" x1={MID - 10.5} y1={y1} x2={MID - 10.5} y2={y2} />
-                <line className="track__rail" x1={MID + 10.5} y1={y1} x2={MID + 10.5} y2={y2} />
-              </g>
-            ))}
-            {kind === 'bad' && (
-              <path className="track__break" d={`M ${MID - 5} ${(top + bottom) / 2 - 5} l 10 10 m 0 -10 l -10 10`} />
-            )}
+          <g key={index} className="track__span track__span--good" style={{ '--i': index } as CSSProperties}>
+            <LandStrip x={x} y={top} width={LAND_W} height={bottom - top} />
           </g>
         )
       })}
 
-      {/* The car points down the bridge, front at the bottom. */}
-      <g className={carClass} style={carStyle}>
-        <g className="track__car-body">
-          <rect className="track__tyre" x="-1.5" y="5" width="4" height="7" rx="1.5" />
-          <rect className="track__tyre" x={CAR_W - 2.5} y="5" width="4" height="7" rx="1.5" />
-          <rect className="track__tyre" x="-1.5" y="21" width="4" height="7" rx="1.5" />
-          <rect className="track__tyre" x={CAR_W - 2.5} y="21" width="4" height="7" rx="1.5" />
-          <rect className="track__paint" x="0" y="0" width={CAR_W} height={CAR_H} rx="6" />
-          <rect className="track__glass" x="3.5" y="4" width={CAR_W - 7} height="5" rx="2" />
-          <rect className="track__roof" x="3.5" y="10.5" width={CAR_W - 7} height="10" rx="2" />
-          <rect className="track__glass" x="3" y="22" width={CAR_W - 6} height="6" rx="2" />
-          <rect className="track__lamp" x="3" y={CAR_H - 2.2} width="4" height="2" rx="1" />
-          <rect className="track__lamp" x={CAR_W - 7} y={CAR_H - 2.2} width="4" height="2" rx="1" />
+      {islands}
+
+      <g className={runnerClass} style={runnerStyle}>
+        <g className="track__hop">
+          <Dino pose={pose} width={DINO_W} height={DINO_H} />
         </g>
       </g>
     </svg>
   )
 }
 
-function ripples(height: number): string {
-  let d = ''
-  for (let y = 40; y < height - 40; y += 26) d += `M 6 ${y} q 3 -2 6 0 M ${WIDTH - 12} ${y + 13} q 3 -2 6 0 `
-  return d
+/** A word's island: sand ring around grass, with a checkered flag on the goal. */
+function Island({ y, goal }: { y: number; goal: boolean }) {
+  const x = 0
+  return (
+    <g className="track__island">
+      <path className="track__shore" d={`M${x + 4} ${y}h${WIDTH - 8}v2h2v2h2v${ISLAND - 8}h-2v2h-2v2h${-(WIDTH - 8)}v-2h-2v-2h-2v${-(ISLAND - 8)}h2v-2h2z`} />
+      <path className="track__sand" d={`M${x + 6} ${y + 2}h${WIDTH - 12}v2h2v2h2v${ISLAND - 12}h-2v2h-2v2h${-(WIDTH - 12)}v-2h-2v-2h-2v${-(ISLAND - 12)}h2v-2h2z`} />
+      <rect className="track__grass" x={x + 8} y={y + 6} width={WIDTH - 16} height={ISLAND - 12} />
+      <rect className="track__tuft" x={x + 12} y={y + 10} width="4" height="2" />
+      <rect className="track__tuft" x={x + 28} y={y + 24} width="4" height="2" />
+      {goal && (
+        <g className="track__flag">
+          <rect x={WIDTH - 12} y={y + 2} width="2" height="22" className="track__pole" />
+          <path className="track__flag-a" d={`M${WIDTH - 10} ${y + 2}h8v6h-8z`} />
+          <path className="track__flag-b" d={`M${WIDTH - 10} ${y + 2}h2v2h-2zM${WIDTH - 6} ${y + 2}h2v2h-2zM${WIDTH - 8} ${y + 4}h2v2h-2zM${WIDTH - 4} ${y + 4}h2v2h-2zM${WIDTH - 10} ${y + 6}h2v2h-2zM${WIDTH - 6} ${y + 6}h2v2h-2z`} />
+        </g>
+      )}
+    </g>
+  )
 }
 
-/** A checkered strip where the bridge meets the far bank. */
-function finishLine(y: number): string {
+/** Land between islands, from above: grass down the middle and checkered earth banks. */
+function LandStrip({ x, y, width, height, crumbled }: { x: number; y: number; width: number; height: number; crumbled?: 'top' | 'bottom' }) {
+  const tufts: ReactNode[] = []
+  for (let ty = y + 6; ty < y + height - 6; ty += 12) tufts.push(<rect key={ty} className="track__tuft" x={x + (ty % 24 < 12 ? 8 : 14)} y={ty} width="4" height="2" />)
+  const bank = (bx: number) => {
+    const squares: ReactNode[] = []
+    for (let by = y; by < y + height; by += 4) squares.push(<rect key={by} className="track__earth-b" x={bx + ((by - y) % 8 === 0 ? 0 : 2)} y={by} width="2" height={Math.min(2, y + height - by)} />)
+    return squares
+  }
+  return (
+    <g>
+      <rect className="track__edge" x={x} y={y} width={width} height={height} />
+      <rect className="track__earth-a" x={x + 2} y={y} width="4" height={height} />
+      <rect className="track__earth-a" x={x + width - 6} y={y} width="4" height={height} />
+      {bank(x + 2)}
+      {bank(x + width - 6)}
+      <rect className="track__grass" x={x + 6} y={y} width={width - 12} height={height} />
+      {tufts}
+      {crumbled && (
+        <path
+          className="track__crumble"
+          d={crumbled === 'bottom'
+            ? `M${x} ${y + height - 4}h4v2h4v2h-8zM${x + 12} ${y + height - 2}h6v2h-6zM${x + width - 6} ${y + height - 4}h6v4h-6z`
+            : `M${x} ${y}h6v4h-6zM${x + 10} ${y}h6v2h-6zM${x + width - 8} ${y}h8v2h-4v2h-4z`}
+        />
+      )}
+    </g>
+  )
+}
+
+function foam(height: number): string {
   let d = ''
-  for (let x = 0; x < WIDTH; x += 6) d += `M ${x} ${y + ((x / 6) % 2) * 3} h 3 v 3 h -3 Z `
+  for (let y = 30; y < height - 20; y += 22) d += `M4 ${y}h4v2h-4z M${WIDTH - 8} ${y + 11}h4v2h-4z `
   return d
 }

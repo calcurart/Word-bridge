@@ -11,6 +11,7 @@ import type { WordGraph } from '../lib/graph.ts'
 import { hintCount, shareText } from '../lib/share.ts'
 import type { ShareLabel } from '../lib/share.ts'
 import { BridgeProgress } from './BridgeProgress.tsx'
+import { Dino } from './pixel/Pixel.tsx'
 import { shareOrCopy } from './clipboard.ts'
 import { prefersReducedMotion } from './hooks.ts'
 import { ArrowIcon, BulbIcon, CheckIcon, CrossIcon, RefreshIcon, ShareIcon } from './icons.tsx'
@@ -391,6 +392,7 @@ function Result({ puzzle, record, graph, mode, shareLabel, nextDaily, headingRef
 
   return (
     <section className={`result result--${won ? 'won' : 'lost'}`} aria-labelledby={`${ids}-title`}>
+      {won && <Dino pose="cheer" scale={3} className="result__dino" />}
       <h2 id={`${ids}-title`} className="result__title" tabIndex={-1} ref={headingRef}>
         {won ? 'Bridge complete!' : 'Out of checks'}
       </h2>
