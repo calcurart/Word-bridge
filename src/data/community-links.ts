@@ -3,6 +3,9 @@
 // To remove one: delete its line here AND add it to NEVER_LINKS in links.ts, or it will come back.
 export const COMMUNITY_LINKS: readonly string[] = [
   'bow+string',
+  'breath mint',
+  'cow milk',
+  'milk chocolate',
   'side table',
   'string theory',
   'sun+hat',
