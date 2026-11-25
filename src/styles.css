@@ -191,7 +191,7 @@ button:disabled { cursor: not-allowed; }
 .tool-button:hover { background: var(--bg-deep); }
 .tool-button svg { width: 20px; height: 20px; }
 .tool-button--labelled { height: 42px; padding: 0 16px; }
-.tool-button__label { font-size: 14px; font-weight: 600; }
+.tool-button__label { font-size: 14px; font-weight: 600; white-space: nowrap; }
 
 .icon-button {
   display: inline-grid; place-items: center;
@@ -793,6 +793,11 @@ button.pill--bad:hover { background: color-mix(in srgb, var(--bad-soft) 70%, var
 @media (max-width: 1100px) {
   .topbar__inner { padding: 0 32px; }
   .layout { grid-template-columns: minmax(0, 1fr) 280px; }
+}
+
+@media (max-width: 959px) {
+  .tool-button--labelled { padding: 0; min-width: 40px; }
+  .tool-button__label { display: none; }
 }
 
 @media (max-width: 899px) {
