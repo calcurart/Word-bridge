@@ -5,7 +5,6 @@ import type { ChallengeMode } from '../lib/challenge.ts'
 import { answerChallenge, finishChallenge, ONLINE, skipChallenge, startChallenge } from '../lib/online.ts'
 import type { AnswerReason, AnswerResult, ChallengeResult, RoundState } from '../lib/online.ts'
 import { RefreshIcon, TimerIcon, TrophyIcon } from './icons.tsx'
-import { LandBridge } from './LandBridge.tsx'
 
 type Props = {
   playerId: string
@@ -188,11 +187,10 @@ export function ChallengeBoard({ playerId, playerName, bests, onBest, onAnnounce
         <div className="challenge__intro">
           <TimerIcon className="challenge__badge" width="34" height="34" />
           <h2 id="challenge-title" className="challenge__title">Word challenge</h2>
-          <p className="challenge__catch">How far can you go?</p>
           <p>
             {ROUNDS} prompt words, {ROUND_SECONDS} seconds each. Make a word or phrase with each one, joined
             (<em>sunflower</em>) or spaced (<em>forest fire</em>). Rare answers score more: <strong>10</strong> for the
-            obvious one, up to <strong>100</strong> for something nobody else thinks of. Every word raises a piece of land bridge, and the rarer the word, the bigger the land.
+            obvious one, up to <strong>100</strong> for something nobody else thinks of.
           </p>
           <div className="challenge__modes">
             {(['single', 'double'] as const).map(mode => (
@@ -224,7 +222,6 @@ export function ChallengeBoard({ playerId, playerName, bests, onBest, onAnnounce
       <section className="challenge result" aria-labelledby="challenge-over">
         <h2 id="challenge-over" className="result__title" tabIndex={-1} ref={heading}>Finished!</h2>
         <p className="challenge__score-big">{phase.score}</p>
-        <LandBridge results={phase.made.flat()} />
         <p className="result__summary">
           points · {MODES[phase.mode].title}{phase.newBest ? ' · new personal best!' : bests[phase.mode] > 0 ? ` · best ${bests[phase.mode]}` : ''}
         </p>
@@ -263,7 +260,6 @@ export function ChallengeBoard({ playerId, playerName, bests, onBest, onAnnounce
       >
         <span style={{ width: `${fraction * 100}%` }} />
       </div>
-      <LandBridge results={current.made.flat()} live />
 
       <form className={`challenge__play challenge__play--${current.mode}`} onSubmit={submit} noValidate>
         {current.mode === 'double' && (

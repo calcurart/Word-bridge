@@ -11,12 +11,13 @@ import { gameKey, loadSave, randomId, resetSave, withDaily, writeSave } from '..
 import { ONLINE, reportGame } from '../lib/online.ts'
 import type { Save, Theme } from '../lib/storage.ts'
 import { Dialog } from './Dialog.tsx'
-import { HeroScene } from './HeroScene.tsx'
 import { ChallengeBoard } from './ChallengeBoard.tsx'
 import { GameBoard } from './GameBoard.tsx'
 import { LeaderboardPanel, LeaderboardSettings } from './Leaderboard.tsx'
 import { useNow } from './hooks.ts'
-import { CloseIcon, HelpIcon, InfoIcon, SettingsIcon, StatsIcon, TrophyIcon } from './icons.tsx'
+import { CloseIcon, InfoIcon, TrophyIcon } from './icons.tsx'
+import { FigmaIcon } from './FigmaIcon.tsx'
+import { PlayGuide } from './PlayGuide.tsx'
 import { SettingsPanel, StatsPanel, SuggestPanel } from './panels.tsx'
 import { Tutorial } from './Tutorial.tsx'
 
@@ -199,93 +200,138 @@ export function App() {
     return note
   }
 
+  const modes = (
+    <div className="segmented" role="group" aria-label="Game mode">
+      <button type="button" className="segmented__button" aria-pressed={showingDaily} onClick={() => setMode('daily')}>Daily</button>
+      <button type="button" className="segmented__button" aria-pressed={mode === 'practice'} onClick={openPractice}>Practice</button>
+      <button type="button" className="segmented__button" aria-pressed={showingChallenge} onClick={() => setMode('challenge')}>Challenge</button>
+    </div>
+  )
+
+  function toggleTheme() {
+    const dark = save.theme === 'dark' || (save.theme === 'system' && matchMedia('(prefers-color-scheme: dark)').matches)
+    setSave(current => ({ ...current, theme: dark ? 'light' : 'dark' }))
+  }
+
+  const puzzleNumber = `No. ${String(assignment.number).padStart(3, '0')}`
+  const difficulty = puzzle?.difficulty === 'easy' ? 'Easy' : 'Standard'
+
   return (
     <div className="app">
       <a className="skip-link" href="#puzzle">Skip to puzzle</a>
-      <header className="masthead">
-        <HeroScene>
-          <div className="masthead__bar">
-            <h1 className="wordmark">
-              <span className="wordmark__line">Word</span> <span className="wordmark__line">Bridge</span>
-            </h1>
-            <nav className="masthead__tools" aria-label="Game menu">
-              <button type="button" className="icon-button" onClick={() => setDialog('help')} aria-label="How to play"><HelpIcon /></button>
-              {ONLINE && <button type="button" className="icon-button" onClick={() => setDialog('leaderboard')} aria-label="Leaderboard"><TrophyIcon /></button>}
-              <button type="button" className="icon-button" onClick={() => setDialog('stats')} aria-label="Statistics"><StatsIcon /></button>
-              <button type="button" className="icon-button" onClick={() => setDialog('settings')} aria-label="Settings"><SettingsIcon /></button>
-            </nav>
-          </div>
-          <p className="hero__tagline">How far can you go?</p>
-        </HeroScene>
-        <div className="segmented" role="group" aria-label="Game mode">
-          <button type="button" className="segmented__button" aria-pressed={showingDaily} onClick={() => setMode('daily')}>Daily</button>
-          <button type="button" className="segmented__button" aria-pressed={mode === 'practice'} onClick={openPractice}>Practice</button>
-          <button type="button" className="segmented__button" aria-pressed={showingChallenge} onClick={() => setMode('challenge')}>Challenge</button>
+      <header className="topbar">
+        <div className="topbar__inner">
+          <h1 className="brand">
+            <span className="brand__mark"><FigmaIcon name="bridge" /></span>
+            <span className="brand__name">wordbridge</span>
+          </h1>
+          <div className="topbar__modes">{modes}</div>
+          <nav className="topbar__tools" aria-label="Game menu">
+            <button type="button" className="tool-button tool-button--labelled" onClick={() => setDialog('help')} aria-label="How to play">
+              <FigmaIcon name="help" /><span className="tool-button__label">How to play</span>
+            </button>
+            {ONLINE && <button type="button" className="tool-button" onClick={() => setDialog('leaderboard')} aria-label="Leaderboard"><TrophyIcon /></button>}
+            <button type="button" className="tool-button" onClick={() => setDialog('stats')} aria-label="Statistics"><FigmaIcon name="stats" /></button>
+            <button type="button" className="tool-button" onClick={() => setDialog('settings')} aria-label="Settings"><FigmaIcon name="settings" /></button>
+          </nav>
         </div>
       </header>
 
-      {storageIssue && (
-        <div className="notice" role="status">
-          <InfoIcon />
-          <p>{STORAGE_MESSAGES[storageIssue]}</p>
-          <button type="button" className="icon-button icon-button--small" onClick={() => setStorageIssue(null)} aria-label="Dismiss storage notice"><CloseIcon /></button>
-        </div>
-      )}
-
-      {newDayReady && showingDaily && (
-        <div className="notice notice--accent" role="status">
-          <p>A new Daily Bridge is ready.</p>
-          <button type="button" className="btn btn--primary btn--small" onClick={goToToday}>Play today’s bridge</button>
-        </div>
-      )}
-
-      <main id="puzzle" className="main" tabIndex={-1}>
-        {showingChallenge ? (
-          <ChallengeBoard
-            playerId={save.playerId}
-            playerName={save.playerName}
-            bests={{ single: save.bestSingle, double: save.bestDouble }}
-            onBest={(mode, score) => setSave(current => (mode === 'single'
-              ? { ...current, bestSingle: Math.max(current.bestSingle, score) }
-              : { ...current, bestDouble: Math.max(current.bestDouble, score) }))}
-            onAnnounce={announce}
-            onLeaderboard={() => setDialog('leaderboard')}
-          />
-        ) : puzzle && record ? (
-          <>
-            <div className="meta">
-              <h2 className="meta__title">
-                {showingDaily ? `Daily Bridge #${assignment.number}` : 'Practice'}
-                <span className="meta__chip">{puzzle.difficulty === 'easy' ? 'Easy · 2 gaps' : 'Standard · 3 gaps'}</span>
-              </h2>
-              {showingDaily ? (
-                <p className="meta__sub">{olderDaily ? 'Finishing yesterday’s bridge' : <span aria-hidden="true">{countdown}</span>}</p>
-              ) : (
-                <button type="button" className="link-button" onClick={playAgain}>New puzzle</button>
-              )}
-            </div>
-            <p className="instruction">Fill the gaps. Each neighboring pair makes a familiar word or phrase.</p>
-            <GameBoard
-              key={`${mode}-${showingDaily ? assignment.day : record.puzzleId}`}
-              puzzle={puzzle}
-              record={record}
-              graph={graph}
-              mode={mode}
-              shareLabel={showingDaily ? { mode: 'daily', number: assignment.number } : { mode: 'practice' }}
-              nextDaily={showingDaily && !olderDaily ? countdown : null}
-              onRecord={showingDaily ? updateDaily : updatePractice}
-              onAnnounce={announce}
-              onPlayMore={showingDaily ? (olderDaily ? goToToday : openPractice) : playAgain}
-              onSuggest={(from, to) => setSuggestion({ from, to })}
-            />
-          </>
-        ) : (
-          <p className="instruction">Loading practice puzzle…</p>
+      <div className="page">
+        {storageIssue && (
+          <div className="notice" role="status">
+            <InfoIcon />
+            <p>{STORAGE_MESSAGES[storageIssue]}</p>
+            <button type="button" className="icon-button icon-button--small" onClick={() => setStorageIssue(null)} aria-label="Dismiss storage notice"><CloseIcon /></button>
+          </div>
         )}
-      </main>
+
+        {newDayReady && showingDaily && (
+          <div className="notice notice--accent" role="status">
+            <p>A new Daily Bridge is ready.</p>
+            <button type="button" className="btn btn--primary btn--small" onClick={goToToday}>Play today’s bridge</button>
+          </div>
+        )}
+
+        <div className="page__modes">
+          {modes}
+          {!showingChallenge && puzzle && <span className="page__difficulty">{difficulty}</span>}
+        </div>
+
+        <main id="puzzle" className="main" tabIndex={-1}>
+          {showingChallenge ? (
+            <ChallengeBoard
+              playerId={save.playerId}
+              playerName={save.playerName}
+              bests={{ single: save.bestSingle, double: save.bestDouble }}
+              onBest={(mode, score) => setSave(current => (mode === 'single'
+                ? { ...current, bestSingle: Math.max(current.bestSingle, score) }
+                : { ...current, bestDouble: Math.max(current.bestDouble, score) }))}
+              onAnnounce={announce}
+              onLeaderboard={() => setDialog('leaderboard')}
+            />
+          ) : puzzle && record ? (
+            <>
+              <div className="heading">
+                <div className="heading__text">
+                  <p className="heading__eyebrow">
+                    <span className="heading__kicker">{showingDaily ? 'The daily bridge' : 'Practice bridge'}</span>
+                    {showingDaily && <span>/&nbsp; {puzzleNumber}</span>}
+                  </p>
+                  <h2 className="heading__title">
+                    <span className="only-wide">A little wordplay. A new connection.</span>
+                    <span className="only-narrow">
+                      {showingDaily ? 'Your daily bridge' : 'Practice bridge'}
+                      {showingDaily && <span className="heading__number">{puzzleNumber}</span>}
+                    </span>
+                  </h2>
+                  <p className="heading__sub">
+                    {olderDaily ? 'Finishing yesterday’s bridge.' : (
+                      <>
+                        <span className="only-wide">Connect the words. Find your way across.</span>
+                        <span className="only-narrow">Connect each pair to make a word or phrase.</span>
+                      </>
+                    )}
+                  </p>
+                </div>
+                <div className="heading__side">
+                  {!showingDaily && <button type="button" className="link-button" onClick={playAgain}>New puzzle</button>}
+                  <span className="chip">{difficulty} · {puzzle.gaps} gaps</span>
+                </div>
+              </div>
+              <div className="layout">
+                <GameBoard
+                  key={`${mode}-${showingDaily ? assignment.day : record.puzzleId}`}
+                  puzzle={puzzle}
+                  record={record}
+                  graph={graph}
+                  mode={mode}
+                  shareLabel={showingDaily ? { mode: 'daily', number: assignment.number } : { mode: 'practice' }}
+                  nextDaily={showingDaily && !olderDaily ? countdown : null}
+                  onRecord={showingDaily ? updateDaily : updatePractice}
+                  onAnnounce={announce}
+                  onPlayMore={showingDaily ? (olderDaily ? goToToday : openPractice) : playAgain}
+                  onSuggest={(from, to) => setSuggestion({ from, to })}
+                />
+                <PlayGuide gaps={puzzle.gaps} onTutorial={() => setDialog('help')} />
+              </div>
+            </>
+          ) : (
+            <p className="instruction">Loading practice puzzle…</p>
+          )}
+        </main>
+      </div>
 
       <footer className="footer">
-        <p>A new bridge every day at midnight UTC. Your progress stays in this browser.</p>
+        <div className="footer__inner">
+          <p className="footer__text">
+            <span className="only-wide">A fresh bridge every day. A little better together.</span>
+            <span className="only-narrow">A fresh bridge every day.</span>
+          </p>
+          <button type="button" className="tool-button footer__theme" onClick={toggleTheme} aria-label="Switch between light and dark theme">
+            <FigmaIcon name="sun" />
+          </button>
+        </div>
       </footer>
 
       <div className="sr-only" aria-live="polite" aria-atomic="true">{announcement}</div>

@@ -10,11 +10,11 @@ import { findLink, normalizeEntry } from '../lib/graph.ts'
 import type { WordGraph } from '../lib/graph.ts'
 import { hintCount, shareText } from '../lib/share.ts'
 import type { ShareLabel } from '../lib/share.ts'
-import { BridgeProgress } from './BridgeProgress.tsx'
-import { Dino } from './pixel/Pixel.tsx'
+import awaitingIcon from '../assets/icons/awaiting.svg'
+import { FigmaIcon } from './FigmaIcon.tsx'
 import { shareOrCopy } from './clipboard.ts'
 import { prefersReducedMotion } from './hooks.ts'
-import { ArrowIcon, BulbIcon, CheckIcon, CrossIcon, RefreshIcon, ShareIcon } from './icons.tsx'
+import { ArrowIcon, CheckIcon, CrossIcon, RefreshIcon, ShareIcon } from './icons.tsx'
 
 type Props = {
   puzzle: Puzzle
@@ -151,11 +151,24 @@ export function GameBoard({ puzzle, record, graph, mode, shareLabel, nextDaily, 
     focusGap(empty.find(index => index > gap) ?? empty[0])
   }
 
+  const linkCount = record.feedback.length
+  const connected = record.feedback.filter(state => state === true).length
+
   return (
-    <div className="board">
+    <section className={`board card${status === 'won' ? ' board--won' : ''}`} aria-labelledby={`${ids}-board-title`}>
+      <div className="board__progress">
+        <h2 id={`${ids}-board-title`} className="board__title">Build your bridge</h2>
+        <p className="links-meter">
+          <span>{connected} of {linkCount} links connected</span>
+          <span className="links-meter__bars" aria-hidden="true">
+            {record.feedback.map((state, index) => (
+              <span key={index} className={`links-meter__bar${state === true ? ' links-meter__bar--on' : ''}`} />
+            ))}
+          </span>
+        </p>
+      </div>
+
       <form className="board__form" onSubmit={onSubmit} noValidate aria-label="Word bridge puzzle">
-        <div className="bridge-wrap">
-        <BridgeProgress feedback={record.feedback} won={status === 'won'} />
         <ol className={`bridge${status === 'won' ? ' bridge--won' : ''}`} aria-label={`Bridge from ${upper(puzzle.start)} to ${upper(puzzle.end)}`}>
           <li className="bridge__step"><EndTile word={puzzle.start} label="Start" /></li>
           {record.entries.map((entry, gap) => {
@@ -172,7 +185,9 @@ export function GameBoard({ puzzle, record, graph, mode, shareLabel, nextDaily, 
                 <li className="bridge__step">
                   <div className={`tile tile--gap${hinted ? ' tile--hint' : ''}${entry.trim() ? ' tile--filled' : ''}`}>
                     <label className="tile__tag" htmlFor={`${ids}-gap-${gap}`}>
-                      {hinted ? <><BulbIcon width="14" height="14" /> <span>Hint</span></> : <span aria-hidden="true">{gap + 1}</span>}
+                      {hinted
+                        ? <><FigmaIcon name="hint" className="tile__hint-icon" /> <span>Hint</span></>
+                        : <span aria-hidden="true">{String(gap + 1).padStart(2, '0')}</span>}
                       <span className="sr-only">
                         Missing word {gap + 1} of {puzzle.gaps}{hinted ? ', revealed by a hint' : ''}
                       </span>
@@ -202,6 +217,10 @@ export function GameBoard({ puzzle, record, graph, mode, shareLabel, nextDaily, 
                       maxLength={24}
                       placeholder={finished ? '' : '?'}
                     />
+                    <span className="tile__status" aria-hidden="true">
+                      {!hinted && !finished && <span className="tile__editing">Editing</span>}
+                      {record.feedback[gap] === true && <FigmaIcon name="checkWord" className="tile__check" />}
+                    </span>
                   </div>
                 </li>
               </Fragment>
@@ -215,27 +234,31 @@ export function GameBoard({ puzzle, record, graph, mode, shareLabel, nextDaily, 
           </li>
           <li className="bridge__step"><EndTile word={puzzle.end} label="End" /></li>
         </ol>
-        </div>
 
         {!finished && (
           <div className="controls">
-            <CheckMeter left={left} />
             <div className="controls__buttons">
               <button
-                type="button" className="btn btn--quiet" onClick={hint} disabled={hintsRemaining <= 0}
+                type="button" className="btn btn--quiet btn--hint" onClick={hint} disabled={hintsRemaining <= 0}
                 aria-describedby={`${ids}-hint-note`}
               >
-                <BulbIcon /> Hint
+                <FigmaIcon name="hint" /> Hint
                 <span className="btn__badge" aria-hidden="true">{hintsRemaining}</span>
               </button>
-              <button type="submit" className="btn btn--primary">Check Bridge</button>
+              <button type="submit" className="btn btn--primary btn--check">
+                Check bridge <FigmaIcon name="arrowButton" className="btn__arrow" />
+              </button>
             </div>
-            <p id={`${ids}-hint-note`} className="controls__note">
+            <div className="controls__meta">
+              <CheckMeter left={left} />
+              <span className="controls__key"><FigmaIcon name="enter" /> Enter to check</span>
+            </div>
+            <p id={`${ids}-hint-note`} className="sr-only">
               {hintsRemaining > 0
                 ? `${hintsRemaining} of ${maxHints(puzzle)} ${maxHints(puzzle) === 1 ? 'hint' : 'hints'} left. A hint reveals a word and doesn’t use a check.`
                 : 'No hints left.'}
             </p>
-            <p className={`message${message ? ` message--${message.tone}` : ''}`}>{message?.text ?? ' '}</p>
+            <p className={`message${message ? ` message--${message.tone}` : ''}`}>{message?.text ?? ' '}</p>
           </div>
         )}
       </form>
@@ -248,7 +271,7 @@ export function GameBoard({ puzzle, record, graph, mode, shareLabel, nextDaily, 
       )}
 
       {record.attempts.length > 0 && <History puzzle={puzzle} record={record} />}
-    </div>
+    </section>
   )
 }
 
@@ -257,6 +280,7 @@ function EndTile({ word, label }: { word: string; label: string }) {
     <div className="tile tile--end">
       <span className="tile__tag">{label}</span>
       <span className="tile__word">{upper(word)}</span>
+      <span className="tile__status"><FigmaIcon name="lock" /></span>
     </div>
   )
 }
@@ -275,9 +299,9 @@ function Connector({ index, from, to, state, graph, onSuggest }: {
   if (state === true) {
     return (
       <div className="link link--good" style={style}>
-        <span className="link__rails" aria-hidden="true" />
+        <span className="link__line" aria-hidden="true" />
         <span className="pill pill--good">
-          <CheckIcon width="16" height="16" />
+          <FigmaIcon name="checkLink" />
           <span className="sr-only">{label}: recognized, </span>
           <span>{link?.phrase ?? `${from} ${to}`}</span>
         </span>
@@ -287,12 +311,12 @@ function Connector({ index, from, to, state, graph, onSuggest }: {
   if (state === false) {
     return (
       <div className="link link--bad" style={style}>
-        <span className="link__rails" aria-hidden="true" />
+        <span className="link__line" aria-hidden="true" />
         <button
           type="button" className="pill pill--bad" onClick={() => onSuggest(from, to)}
           aria-label={`${label}: not in this game’s dictionary. Suggest this phrase.`}
         >
-          <CrossIcon width="16" height="16" />
+          <CrossIcon width="12" height="12" />
           <span>Not in this game’s dictionary</span>
           <span className="pill__more" aria-hidden="true">Suggest</span>
         </button>
@@ -301,7 +325,8 @@ function Connector({ index, from, to, state, graph, onSuggest }: {
   }
   return (
     <div className="link" style={style}>
-      <span className="link__rails" aria-hidden="true" />
+      <span className="link__line" aria-hidden="true" />
+      <img className="link__await" src={awaitingIcon} width="16" height="16" alt="" />
       <span className="sr-only">{label}: not checked yet.</span>
     </div>
   )
@@ -315,7 +340,7 @@ function CheckMeter({ left }: { left: number }) {
           <span key={index} className={`meter__dot${index < left ? ' meter__dot--on' : ''}`} />
         ))}
       </span>
-      <span className="meter__text"><strong>{left}</strong> of {MAX_CHECKS} checks left</span>
+      <span className="meter__text">{left} of {MAX_CHECKS} checks left</span>
     </div>
   )
 }
@@ -324,8 +349,10 @@ function History({ puzzle, record }: { puzzle: Puzzle; record: GameRecord }) {
   return (
     <details className="history">
       <summary>
+        <FigmaIcon name="history" />
         <span>Previous checks</span>
         <span className="history__count">{record.attempts.length}</span>
+        <FigmaIcon name="chevronRight" className="history__chevron" />
       </summary>
       <ol className="history__list">
         {record.attempts.map((attempt, index) => {
@@ -392,7 +419,6 @@ function Result({ puzzle, record, graph, mode, shareLabel, nextDaily, headingRef
 
   return (
     <section className={`result result--${won ? 'won' : 'lost'}`} aria-labelledby={`${ids}-title`}>
-      {won && <Dino pose="cheer" scale={3} className="result__dino" />}
       <h2 id={`${ids}-title`} className="result__title" tabIndex={-1} ref={headingRef}>
         {won ? 'Bridge complete!' : 'Out of checks'}
       </h2>
