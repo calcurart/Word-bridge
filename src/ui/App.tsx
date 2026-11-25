@@ -17,6 +17,7 @@ import { LeaderboardPanel, LeaderboardSettings } from './Leaderboard.tsx'
 import { useNow } from './hooks.ts'
 import { CloseIcon, InfoIcon, TrophyIcon } from './icons.tsx'
 import { FigmaIcon } from './FigmaIcon.tsx'
+import { BrandMark } from './BrandMark.tsx'
 import { PlayGuide } from './PlayGuide.tsx'
 import { SettingsPanel, StatsPanel, SuggestPanel } from './panels.tsx'
 import { Tutorial } from './Tutorial.tsx'
@@ -222,8 +223,8 @@ export function App() {
       <header className="topbar">
         <div className="topbar__inner">
           <h1 className="brand">
-            <span className="brand__mark"><FigmaIcon name="bridge" /></span>
-            <span className="brand__name">wordbridge</span>
+            <BrandMark className="brand__mark" />
+            <span className="brand__name">Word Bridge</span>
           </h1>
           <div className="topbar__modes">{modes}</div>
           <nav className="topbar__tools" aria-label="Game menu">

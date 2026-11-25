@@ -1,7 +1,11 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
-  <rect width="64" height="64" rx="14" fill="#f5efe3"/>
-  <path d="M8 38h48" stroke="#1d1b18" stroke-width="4.5" stroke-linecap="round" fill="none"/>
-  <path d="M13 38c6-15 32-15 38 0" stroke="#0e6973" stroke-width="4.5" stroke-linecap="round" fill="none"/>
-  <path d="M21 29v9M27 26.4v11.6M32 25.8v12.2M37 26.4v11.6M43 29v9" stroke="#0e6973" stroke-width="2.4" stroke-linecap="round"/>
-  <path d="M13 38v10M51 38v10" stroke="#1d1b18" stroke-width="4.5" stroke-linecap="round"/>
+  <rect width="64" height="64" rx="14" fill="#ee7d55"/>
+  <g transform="translate(7 16) scale(0.25)" fill="#ffffff" stroke="#ffffff" stroke-linecap="round" stroke-linejoin="round">
+    <polygon points="13,6 22,6 39,120 30,120" stroke="none"/>
+    <rect x="95.5" y="26" width="9" height="94" rx="1" stroke="none"/>
+    <polygon points="178,6 187,6 170,120 161,120" stroke="none"/>
+    <rect x="0" y="95" width="200" height="10" rx="2" stroke="none"/>
+    <path d="M18 9 Q58 150 100 29 Q142 150 182 9" fill="none" stroke-width="11"/>
+    <path d="M38.1 63.8V96M58.5 85V96M79.1 73.8V96M120.9 73.8V96M141.5 85V96M161.9 63.8V96" stroke-width="5"/>
+  </g>
 </svg>

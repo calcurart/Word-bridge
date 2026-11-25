@@ -27,6 +27,9 @@
   --hint: #7a5600;
   --hint-soft: #f8edc8;
   --car: #c4532c;
+  /* Logo: the Bridge-W mark in pale orange, the wordmark in green. */
+  --brand-orange: #ee7d55;
+  --brand-ink: #275d4d;
   --shadow: 0 1px 3px rgb(31 56 41 / 0.06);
   --shadow-card: 0 4px 16px rgb(33 61 46 / 0.04);
   --shadow-lift: 0 12px 30px -18px rgb(31 56 41 / 0.35);
@@ -66,6 +69,7 @@
     --hint: #f0c86a;
     --hint-soft: #372d14;
     --car: #f0875c;
+    --brand-ink: var(--ink);
     --shadow: 0 1px 3px rgb(0 0 0 / 0.35);
     --shadow-card: 0 4px 16px rgb(0 0 0 / 0.3);
     --shadow-lift: 0 14px 30px -16px rgb(0 0 0 / 0.8);
@@ -99,6 +103,7 @@
   --hint: #f0c86a;
   --hint-soft: #372d14;
   --car: #f0875c;
+  --brand-ink: var(--ink);
   --shadow: 0 1px 3px rgb(0 0 0 / 0.35);
   --shadow-card: 0 4px 16px rgb(0 0 0 / 0.3);
   --shadow-lift: 0 14px 30px -16px rgb(0 0 0 / 0.8);
@@ -174,12 +179,11 @@ button:disabled { cursor: not-allowed; }
   height: 88px; max-width: 1360px; margin: 0 auto; padding: 0 64px;
 }
 .brand { display: flex; align-items: center; gap: 10px; margin: 0; font-size: inherit; }
-.brand__mark {
-  display: grid; place-items: center; flex: none;
-  width: 36px; height: 36px; border-radius: 10px;
-  background: #275d4d; color: #deeda8;
+.brand__mark { display: block; flex: none; width: 52px; height: auto; color: var(--brand-orange); }
+.brand__name {
+  font-size: 26px; font-weight: 700; line-height: 1.4; letter-spacing: -0.02em;
+  color: var(--brand-ink); white-space: nowrap;
 }
-.brand__name { font-size: 26px; font-weight: 700; line-height: 1.4; color: var(--ink); white-space: nowrap; }
 .topbar__tools { display: flex; align-items: center; justify-content: flex-end; gap: 10px; }
 
 .tool-button {
@@ -857,6 +861,7 @@ button.pill--bad:hover { background: color-mix(in srgb, var(--bad-soft) 70%, var
   .only-narrow { display: inline; }
 
   .topbar__inner { grid-template-columns: 1fr auto; height: 72px; padding: 0 16px 0 20px; }
+  .brand__mark { width: 44px; }
   .brand__name { font-size: 22px; }
   .topbar__modes { display: none; }
   .topbar__tools { gap: 4px; }
