@@ -431,22 +431,35 @@ button:disabled { cursor: not-allowed; }
 .bridge { list-style: none; margin: 0; padding: 0; display: grid; justify-items: center; width: 100%; max-width: 424px; }
 .bridge__step { width: 100%; display: grid; }
 
+/* Every tile centres its word across the whole box: the word (or the typing field) spans the full width,
+   and the position label and status icon sit on top of it at the edges. */
 .tile {
+  --tile-side: 16px; /* label and icon inset */
+  --tile-room: 88px; /* space kept clear for them on both sides */
+  --tracking: 2px;
   position: relative;
-  display: grid; grid-template-columns: 56px 1fr 56px; align-items: center;
-  width: 100%; height: 60px; padding: 0 16px;
+  display: flex; align-items: center; justify-content: center;
+  width: 100%; height: 60px;
   border-radius: var(--radius);
 }
+.tile__tag, .tile__status {
+  position: absolute; top: 50%; z-index: 1; transform: translateY(-50%);
+  pointer-events: none;
+}
 .tile__tag {
+  left: var(--tile-side);
   display: inline-flex; align-items: center; gap: 4px;
   font-size: 10px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; line-height: 1.4;
   color: var(--muted);
 }
+.tile__status { right: var(--tile-side); display: flex; align-items: center; justify-content: flex-end; height: 24px; }
 .tile__word, .tile__input {
-  grid-column: 2; justify-self: center;
-  font-family: var(--font-tile); font-size: 22px; font-weight: 700; letter-spacing: 2px; line-height: 1.4; text-transform: uppercase;
+  font-family: var(--font-tile); font-size: 22px; font-weight: 700; line-height: 1.4; text-transform: uppercase;
+  /* Letter spacing adds space after the last letter too; an equal indent balances it so the word is truly centred. */
+  letter-spacing: var(--tracking); text-indent: var(--tracking);
+  text-align: center;
 }
-.tile__status { grid-column: 3; display: flex; align-items: center; justify-content: flex-end; height: 24px; }
+.tile__word { width: 100%; padding: 0 var(--tile-room); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .tile--end { background: var(--end-bg); color: var(--end-ink); }
 .tile--end .tile__tag { color: var(--end-tag); }
 .tile--end .tile__status { color: var(--end-tag); }
@@ -457,7 +470,7 @@ button:disabled { cursor: not-allowed; }
 }
 .tile--gap.tile--filled { background: var(--surface-2); border: 1px solid var(--line); }
 .tile--gap:focus-within {
-  background: var(--surface); border: 2px solid var(--accent); padding: 0 15px;
+  background: var(--surface); border: 2px solid var(--accent);
   box-shadow: 0 0 0 4px var(--accent-soft);
 }
 .tile--gap.tile--hint { background: var(--accent-wash); border: 1px solid var(--line); }
@@ -465,15 +478,13 @@ button:disabled { cursor: not-allowed; }
 .tile__hint-icon { width: 14px !important; height: 14px !important; }
 
 .tile__input {
-  grid-column: auto; justify-self: stretch; /* span the whole tile, not just the middle column */
   position: absolute; inset: 0; width: 100%; height: 100%;
-  padding: 0 88px; border: 0; border-radius: inherit; background: transparent;
-  text-align: center; color: var(--ink); caret-color: var(--accent);
+  padding: 0 var(--tile-room); border: 0; border-radius: inherit; background: transparent;
+  color: var(--ink); caret-color: var(--accent);
 }
-.tile__input::placeholder { color: var(--line-strong); font-weight: 600; }
+.tile__input::placeholder { color: var(--line-strong); font-weight: 600; text-align: center; }
 .tile__input:focus { outline: none; }
 .tile__input[readonly] { cursor: default; }
-.tile__tag, .tile__status { position: relative; z-index: 1; pointer-events: none; }
 .tile__check { color: var(--accent); }
 .tile__editing { display: none; font-size: 9px; font-weight: 700; letter-spacing: 0.4px; text-transform: uppercase; color: var(--accent); }
 .tile--gap:focus-within .tile__editing { display: inline; }
@@ -783,10 +794,10 @@ button.pill--bad:hover { background: color-mix(in srgb, var(--bad-soft) 70%, var
 
 .board .result { width: 100%; max-width: 424px; box-shadow: none; }
 
-/* In dark mode the design's white "awaiting" marker becomes a dark gap in the line. */
-:root[data-theme="dark"] .link__await { filter: invert(0.92) hue-rotate(180deg); }
+/* In dark mode the design's white "awaiting" marker is inverted and blended so its square disappears into the card and only the dot shows. */
+:root[data-theme="dark"] .link__await { filter: invert(1) hue-rotate(180deg); mix-blend-mode: lighten; }
 @media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) .link__await { filter: invert(0.92) hue-rotate(180deg); }
+  :root:not([data-theme="light"]) .link__await { filter: invert(1) hue-rotate(180deg); mix-blend-mode: lighten; }
 }
 
 /* Responsive: the design's desktop frame is 1360 wide, the mobile frame 390. */
@@ -833,9 +844,8 @@ button.pill--bad:hover { background: color-mix(in srgb, var(--bad-soft) 70%, var
   .links-meter { justify-content: space-between; width: 100%; font-weight: 600; color: var(--accent); }
   .links-meter__bar { width: 16px; }
 
-  .tile { grid-template-columns: 46px 1fr 46px; height: 56px; }
+  .tile { --tile-room: 70px; height: 56px; }
   .tile__word, .tile__input { font-size: 20px; }
-  .tile__input { padding: 0 66px; }
   .link { height: 28px; }
 
   .controls { gap: 14px; }
@@ -852,9 +862,8 @@ button.pill--bad:hover { background: color-mix(in srgb, var(--bad-soft) 70%, var
 @media (max-width: 389px) {
   .page__modes .segmented { flex-basis: 260px; }
   .segmented__button { font-size: 13px; }
-  .tile__word, .tile__input { font-size: 18px; letter-spacing: 1px; }
-  .tile__input { padding: 0 52px; }
-  .tile { grid-template-columns: 40px 1fr 40px; padding: 0 12px; }
+  .tile { --tile-side: 12px; --tile-room: 58px; --tracking: 1px; }
+  .tile__word, .tile__input { font-size: 18px; }
   .pill__more { display: none; }
   .controls__buttons { grid-template-columns: 1fr; }
   .stats__grid { grid-template-columns: repeat(2, 1fr); }
