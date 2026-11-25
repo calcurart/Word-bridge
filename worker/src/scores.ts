@@ -22,7 +22,7 @@ type Context = { db: D1Database; ipHash: string; now: number; json: Json }
 
 const todayStart = (now: number) => Math.floor(now / DAY) * DAY
 
-async function readBody(request: Request): Promise<Record<string, unknown> | null> {
+export async function readBody(request: Request): Promise<Record<string, unknown> | null> {
   try {
     const value: unknown = await request.json()
     return value !== null && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : null

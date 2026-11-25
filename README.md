@@ -271,6 +271,33 @@ Names are checked for length and offensive words. Rate limits: 120 game reports 
 address. Answers ship with the page and anyone could script a fast run, so this is a casual leaderboard, not a
 cheat-proof one. To remove a player: `npx wrangler@4 d1 execute word-bridge --remote --command "UPDATE players SET hidden = 1 WHERE name = '…'"`.
 
+## How others crossed
+
+Any valid bridge wins, so after finishing a Daily the result card shows **how other players crossed it**: the five
+most taken routes with their share of solvers, the player's own route (highlighted, and listed separately if it isn't
+in the top five), and a one-line verdict ("You took the most popular route…", "A rare route…", "Nobody else has
+crossed your way…").
+
+- Once a finished daily is counted (`POST /games`), the game sends `POST /crossings { player, day, bridge }` with the
+  winning gap words (no bridge after a loss) and gets the breakdown back (`worker/src/crossings.ts`). The server only
+  answers players whose game for that day is counted, so the breakdown never spoils a puzzle in progress.
+- A bridge is stored once per player and day, in the `bridge` column of `games`, and only if every link is in the
+  game's dictionary (built-in links, then verified suggestions from the database). Made-up or offensive routes are
+  never stored or shown. Only routes and counts are returned, never player names.
+- Shared rules (request checks, ranking, percentages, verdicts) are in `src/lib/crossings.ts`; the panel is
+  `src/ui/Crossings.tsx`. Offline, or if the service doesn't answer, the result card looks as it did before.
+
+**Upgrading an existing database:** run `worker/migrations/0004-crossings.sql` once, then deploy the Worker, before
+publishing the site:
+
+```powershell
+npx wrangler@4 d1 execute word-bridge --remote --file=migrations/0004-crossings.sql
+```
+
+```powershell
+npx wrangler@4 deploy
+```
+
 ## The curated dictionary's limits
 
 The game knows **651 built-in links between 414 words**, plus any community phrases, and ships **69 puzzles**

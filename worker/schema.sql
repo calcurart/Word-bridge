@@ -58,9 +58,11 @@ CREATE TABLE IF NOT EXISTS games (
   hints INTEGER NOT NULL,
   ip_hash TEXT NOT NULL,
   created_at INTEGER NOT NULL,
+  bridge TEXT,                             -- daily wins only: the gap words, e.g. 'flower pot' (see crossings.ts)
   PRIMARY KEY (player_id, game_id)
 );
 CREATE INDEX IF NOT EXISTS games_by_ip ON games (ip_hash, created_at);
+CREATE INDEX IF NOT EXISTS games_by_bridge ON games (game_id, bridge);
 
 -- Challenge runs. The server starts the clock, so a score is only accepted within five minutes (plus a short grace).
 CREATE TABLE IF NOT EXISTS challenge_runs (

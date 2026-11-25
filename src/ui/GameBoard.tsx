@@ -15,6 +15,10 @@ import { FigmaIcon } from './FigmaIcon.tsx'
 import { shareOrCopy } from './clipboard.ts'
 import { prefersReducedMotion } from './hooks.ts'
 import { ArrowIcon, CheckIcon, CrossIcon, RefreshIcon, ShareIcon } from './icons.tsx'
+import { Crossings } from './Crossings.tsx'
+
+/** Where to ask "how did others cross?": daily games only, with the online service. */
+export type CrossingsSource = { readonly playerId: string; readonly day: number; readonly ready: boolean }
 
 type Props = {
   puzzle: Puzzle
@@ -25,6 +29,7 @@ type Props = {
   shareLabel: ShareLabel
   /** "Next Daily Bridge in …" text, daily only. */
   nextDaily: string | null
+  crossings: CrossingsSource | null
   onRecord: (record: GameRecord) => void
   onAnnounce: (text: string) => void
   onPlayMore: () => void
@@ -36,7 +41,7 @@ type Message = { text: string; tone: 'info' | 'warn' | 'good' }
 const upper = (word: string) => word.toUpperCase()
 const isCoarsePointer = () => typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches
 
-export function GameBoard({ puzzle, record, graph, mode, shareLabel, nextDaily, onRecord, onAnnounce, onPlayMore, onSuggest }: Props) {
+export function GameBoard({ puzzle, record, graph, mode, shareLabel, nextDaily, crossings, onRecord, onAnnounce, onPlayMore, onSuggest }: Props) {
   const status = gameStatus(record)
   const finished = status !== 'playing'
   const inputs = useRef<(HTMLInputElement | null)[]>([])
@@ -265,7 +270,7 @@ export function GameBoard({ puzzle, record, graph, mode, shareLabel, nextDaily, 
 
       {finished && (
         <Result
-          puzzle={puzzle} record={record} graph={graph} mode={mode} shareLabel={shareLabel} nextDaily={nextDaily}
+          puzzle={puzzle} record={record} graph={graph} mode={mode} shareLabel={shareLabel} nextDaily={nextDaily} crossings={crossings}
           headingRef={resultHeading} onPlayMore={onPlayMore} onAnnounce={onAnnounce}
         />
       )}
@@ -381,13 +386,14 @@ function History({ puzzle, record }: { puzzle: Puzzle; record: GameRecord }) {
   )
 }
 
-function Result({ puzzle, record, graph, mode, shareLabel, nextDaily, headingRef, onPlayMore, onAnnounce }: {
+function Result({ puzzle, record, graph, mode, shareLabel, nextDaily, crossings, headingRef, onPlayMore, onAnnounce }: {
   puzzle: Puzzle
   record: GameRecord
   graph: WordGraph
   mode: 'daily' | 'practice'
   shareLabel: ShareLabel
   nextDaily: string | null
+  crossings: CrossingsSource | null
   headingRef: RefObject<HTMLHeadingElement | null>
   onPlayMore: () => void
   onAnnounce: (text: string) => void
@@ -446,6 +452,10 @@ function Result({ puzzle, record, graph, mode, shareLabel, nextDaily, headingRef
           </li>
         ))}
       </ul>
+
+      {crossings && (
+        <Crossings playerId={crossings.playerId} day={crossings.day} ready={crossings.ready} bridge={won ? words : null} />
+      )}
 
       <div className="result__actions">
         <button type="button" className="btn btn--primary" onClick={share}>

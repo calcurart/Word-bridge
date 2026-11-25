@@ -2,6 +2,7 @@
 // Every call fails quietly (returns null/false) so the game keeps working offline.
 import type { ChallengeMode } from './challenge.ts'
 import { COMMUNITY_API, request } from './community.ts'
+import type { Crossings, Route } from './crossings.ts'
 
 export const ONLINE = COMMUNITY_API !== ''
 
@@ -34,6 +35,37 @@ export type GameReport = {
 export async function reportGame(report: GameReport): Promise<boolean> {
   const body = await post('/games', report)
   return body?.status === 'counted' || body?.status === 'already-counted'
+}
+
+const ROUTE_WORD = /^[a-z]+$/
+
+function readRoute(value: unknown): Route | null {
+  if (value === null || typeof value !== 'object') return null
+  const { words, count } = value as Record<string, unknown>
+  if (!Array.isArray(words) || words.length === 0 || !words.every(word => typeof word === 'string' && ROUTE_WORD.test(word))) return null
+  if (typeof count !== 'number' || !Number.isInteger(count) || count < 1) return null
+  return { words: words as string[], count }
+}
+
+/**
+ * Sends the player's winning daily bridge (once the game is counted) and returns how everyone crossed.
+ * Null when offline, when the server doesn't have the game yet, or on any unexpected answer.
+ */
+export async function fetchCrossings(player: string, day: number, bridge: readonly string[] | null): Promise<Crossings | null> {
+  const body = await post('/crossings', bridge ? { player, day, bridge } : { player, day })
+  if (body?.status !== 'ok' || !Array.isArray(body.routes)) return null
+  const routes = body.routes.map(readRoute)
+  if (routes.some(route => route === null)) return null
+  const mine = body.yours === null ? null : readRoute(body.yours)
+  const rank = Number((body.yours as Record<string, unknown> | null)?.rank)
+  const count = (key: string) => (Number.isInteger(body[key]) && (body[key] as number) >= 0 ? (body[key] as number) : 0)
+  return {
+    finished: count('finished'),
+    solvers: count('solvers'),
+    distinct: count('distinct'),
+    routes: routes as Route[],
+    yours: mine && Number.isInteger(rank) && rank >= 1 ? { ...mine, rank } : null,
+  }
 }
 
 /** Where a run stands after a move: the prompt to show next, or done when the last round is over. */

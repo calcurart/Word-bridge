@@ -308,6 +308,9 @@ export function App() {
                   mode={mode}
                   shareLabel={showingDaily ? { mode: 'daily', number: assignment.number } : { mode: 'practice' }}
                   nextDaily={showingDaily && !olderDaily ? countdown : null}
+                  crossings={showingDaily && ONLINE && save.playerId
+                    ? { playerId: save.playerId, day: assignment.day, ready: save.reported.includes(`daily-${assignment.day}`) }
+                    : null}
                   onRecord={showingDaily ? updateDaily : updatePractice}
                   onAnnounce={announce}
                   onPlayMore={showingDaily ? (olderDaily ? goToToday : openPractice) : playAgain}

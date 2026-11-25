@@ -7,12 +7,14 @@
 // stored and served to every player. No accounts, no secrets: IP addresses are only kept as salted hashes
 // for rate limiting, and suggestion records are deleted after 30 days.
 //
-// It also counts finished games and runs the leaderboard and challenge scoring: see scores.ts.
+// It also counts finished games and runs the leaderboard and challenge scoring (see scores.ts), and shows
+// how players crossed each daily puzzle (see crossings.ts).
 import dictionaryText from '../data/challenge-words.txt'
 import wordsText from '../data/english-words.txt'
 import { answer, finish, skip, startRun } from './challenge-api.ts'
 import type { ChallengeContext } from './challenge-api.ts'
 import { parseDictionary } from './challenge-engine.ts'
+import { crossings } from './crossings.ts'
 import { leaderboard, reportGame, updatePlayer } from './scores.ts'
 import type { Context } from './scores.ts'
 import type { Env } from './types.ts'
@@ -68,6 +70,7 @@ export default {
         'POST /challenge/finish': ctx => finish(request, ctx),
         'POST /player': ctx => updatePlayer(request, ctx),
         'GET /leaderboard': ctx => leaderboard(url, ctx),
+        'POST /crossings': ctx => crossings(request, ctx),
       }
       const handler = scoreRoutes[`${request.method} ${url.pathname}`]
       if (handler) {
