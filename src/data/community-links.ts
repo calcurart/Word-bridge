@@ -11,6 +11,7 @@ export const COMMUNITY_LINKS: readonly string[] = [
   'com+post',
   'cow milk',
   'door+post',
+  'food fight',
   'light+post',
   'milk chocolate',
   'pop tart',
